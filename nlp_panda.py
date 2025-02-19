@@ -14,7 +14,7 @@ import subprocess
 # Load spaCy model globally
 @st.cache_resource
 def load_spacy_model():
-    model_name = "en_core_web_sm
+    model_name = "en_core_web_sm"
     try:
         return spacy.load("model_name")
     except OSError:
