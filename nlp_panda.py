@@ -65,6 +65,15 @@ def extract_details(text):
     
     # Extract locations
     locations = [ent.text for ent in doc.ents if ent.label_ == ["GPE","LOC"]]
+
+    # Check for cities using geonamescache
+    for word in text.split():
+        if word.lower() in cities:
+            locations.append(word)
+
+    # Remove duplicates
+    locations = list(set(locations))
+    
     if len(locations) > 1:
         details["Starting Location"] = locations[0]
         details["Destination"] = locations[1]
