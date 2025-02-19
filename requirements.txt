@@ -1,4 +1,4 @@
-streamlit as st
+streamlit 
 spacy
 dateparser
 re
@@ -6,5 +6,6 @@ requests
 openai
 json
 pandas
+pip install --upgrade pip
 from datetime import datetime, timedelta
 from dateparser.search import search_dates
