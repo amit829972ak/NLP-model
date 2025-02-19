@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from dateparser.search import search_dates
 import openai
 import subprocess
-
+import geonamescache
 
 
 # Load spaCy model globally
@@ -20,6 +20,10 @@ def load_spacy_model():
         print("Error: spaCy model not found. Make sure `en_core_web_lg` is installed.")
         raise e
 nlp = load_spacy_model()
+
+# Load city database from geonamescache
+gc = geonamescache.GeonamesCache()
+cities = {city["name"].lower(): city for city in gc.get_cities().values()}
 
 # Define seasonal mappings
 seasonal_mappings = {
@@ -60,7 +64,7 @@ def extract_details(text):
     }
     
     # Extract locations
-    locations = [ent.text for ent in doc.ents if ent.label_ == "GPE"]
+    locations = [ent.text for ent in doc.ents if ent.label_ == ["GPE","LOC"]
     if len(locations) > 1:
         details["Starting Location"] = locations[0]
         details["Destination"] = locations[1]
