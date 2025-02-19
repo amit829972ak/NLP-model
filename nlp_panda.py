@@ -14,7 +14,7 @@ import openai
 # Load spaCy model globally
 @st.cache_resource
 def load_spacy_model():
-    return spacy.load("en_core_web_trf")
+    return spacy.load("en_core_web_sm")
 
 nlp = load_spacy_model()
 
