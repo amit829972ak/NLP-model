@@ -5,7 +5,6 @@ requests
 openai
 pip==25.0.1
 pandas
-datetime 
 timedelta
 dateparser.search 
 search_dates
