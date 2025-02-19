@@ -6,3 +6,6 @@ openai
 pip==25.0.1
 pandas
 timedelta
+watchdog
+setuptools
+wheel
