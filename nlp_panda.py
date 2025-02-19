@@ -15,9 +15,9 @@ import subprocess
 @st.cache_resource
 def load_spacy_model():
     try:
-       return spacy.load("en_core_web_sm")
+       return spacy.load("en_core_web_lg")
     except OSError as e:
-        print("Error: spaCy model not found. Make sure `en_core_web_sm` is installed.")
+        print("Error: spaCy model not found. Make sure `en_core_web_lg` is installed.")
         raise e
 nlp = load_spacy_model()
 
