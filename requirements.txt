@@ -4,6 +4,7 @@ dateparser
 re
 requests
 openai
+pip==25.0.1
 json
 pandas
 datetime 
