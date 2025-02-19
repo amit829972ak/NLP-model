@@ -14,11 +14,13 @@ import subprocess
 # Load spaCy model globally
 @st.cache_resource
 def load_spacy_model():
+    model_name = "en_core_web_sm
     try:
-        return spacy.load("en_core_web_sm")
+        return spacy.load("model_name")
     except OSError:
-        subprocess.run(["python", "-m", "spacy", "download", "en_core_web_sm"])
-        return spacy.load("en_core_web_sm")
+        print(f"Downloading {model_name} model...")
+        subprocess.run(["python", "-m", "spacy", "download", model_name], check=True)
+        return spacy.load("model_name")
 nlp = load_spacy_model()
 
 # Define seasonal mappings
