@@ -1,7 +1,6 @@
 streamlit 
 spacy
 dateparser
-re
 requests
 openai
 pip==25.0.1
