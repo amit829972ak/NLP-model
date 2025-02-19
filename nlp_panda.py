@@ -64,7 +64,7 @@ def extract_details(text):
     }
     
     # Extract locations
-    locations = [ent.text for ent in doc.ents if ent.label_ == ["GPE","LOC"]
+    locations = [ent.text for ent in doc.ents if ent.label_ == ["GPE","LOC"]]
     if len(locations) > 1:
         details["Starting Location"] = locations[0]
         details["Destination"] = locations[1]
