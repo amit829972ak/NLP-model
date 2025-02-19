@@ -10,6 +10,7 @@ numpy==1.23.5
 watchdog
 setuptools
 wheel
+geonamescache
 spacy-lookups-data  # Required for some spaCy models
 en-core-web-lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.6.0/en_core_web_lg-3.6.0.tar.gz
 
