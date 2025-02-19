@@ -149,7 +149,6 @@ def extract_details(text):
     
     solo_match = re.search(r'\bsolo\b', text, re.IGNORECASE)
     duo_match = re.search(r'\bduo\b', text, re.IGNORECASE)
-    couple_match = re.search(r'\bduo\b', text, re.IGNORECASE)
     trio_match = re.search(r'\btrio\b', text, re.IGNORECASE)
     
     travelers = {
@@ -161,9 +160,7 @@ def extract_details(text):
     if solo_match:
        travelers["Adults"] = "1"
     elif duo_match:
-       travelers["Adults"] = "2"
-    elif couple_match:
-       travelers["Adults"] = "2"    
+       travelers["Adults"] = "2"   
     elif trio_match:
        travelers["Adults"] = "3"
     
