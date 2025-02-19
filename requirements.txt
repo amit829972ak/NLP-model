@@ -9,3 +9,4 @@ timedelta
 watchdog
 setuptools
 wheel
+spacy[transformers]
