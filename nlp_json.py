@@ -214,7 +214,7 @@ def extract_details(text):
     "Food Tourism": ["food tasting tours", "cooking classes", "street food exploration"],
     "Religious Tourism": ["pilgrimages", "monastery visits", "religious festivals"],
     "Digital Nomadism": ["co-working spaces", "long-term stays", "remote work-friendly cafes"],
-    "Family Travel": ["theme parks", "kid-friendly resorts", "multi-generational travel"]
+    "Family Travel": ["theme parks", "kid-friendly resorts", "multi-generational travel","family vacation"]
 }
     trip_type_matches = []
     for trip, keywords in trip_type.items():
