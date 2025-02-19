@@ -250,6 +250,10 @@ def extract_details(text):
     
     details["Accommodation Preferences"] = accommodation_matches if accommodation_matches else "Not specified"
     
+    # Extract special preferences    
+    special_requirements = ["wheelchair access", "vegetarian meals", "vegan", "gluten-free"]
+    found_requirements = [req for req in special_requirements if req in text.lower()]
+    details["Special Requirements"] = ", ".join(found_requirements) if found_requirements else "Not specified"
     return details
 
 
