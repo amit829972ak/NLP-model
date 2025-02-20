@@ -132,15 +132,14 @@ def extract_details(text):
                 start_date = datetime.strptime(dates[0], "%Y-%m-%d")
                 details["End Date"] = (start_date + timedelta(days=duration_days)).strftime('%Y-%m-%d')
         
-        else:
-            for season, start_month_day in seasonal_mappings.items():
-                if season in text.lower():
-                    today = datetime.today().year
-                    start_date = f"{today}-{start_month_day}"
-                    details["Start Date"] = start_date
-                    if duration_days:
-                        details["End Date"] = (datetime.strptime(start_date, "%Y-%m-%d") + timedelta(days=duration_days)).strftime('%Y-%m-%d')
-                    break
+        for season, start_month_day in seasonal_mappings.items():
+            if re.search(r'\b' + re.escape(season) + r'\b', text.lower(), re.IGNORECASE):
+                today = datetime.today().year
+                start_date = f"{today}-{start_month_day}"
+                details["Start Date"] = start_date
+                if duration_days:
+                    details["End Date"] = (datetime.strptime(start_date, "%Y-%m-%d") + timedelta(days=duration_days)).strftime('%Y-%m-%d')
+                break
         
     # Extract number of travelers
     travelers_match = re.search(r'(?P<adults>\d+)\s*(?:people|persons|woman|women|lady|man|men|adult|adults)', text, re.IGNORECASE)
