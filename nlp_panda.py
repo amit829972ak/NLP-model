@@ -221,7 +221,7 @@ def extract_details(text):
     
     # Extract trip type
     trip_type = {
-    "Adventure Travel": ["hiking", "skiing", "extreme sports"],
+    "Adventure Travel": ["hiking", "skiing", "backpacking", "extreme sports"],
     "Ecotourism": ["wildlife watching", "nature walks", "eco-lodging"],
     "Cultural Tourism": ["museum visits", "historical site tours", "local festivals"],
     "Historical Tourism": ["castle tours", "archaeological site visits", "war memorial tours"],
