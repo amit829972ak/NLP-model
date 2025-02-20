@@ -142,29 +142,39 @@ def extract_details(text):
                 break
         
     # Extract number of travelers
-    travelers_match = re.search(r'(?P<adults>\d+)\s*(?:people|persons|woman|women|lady|man|men|adult|adults)', text, re.IGNORECASE)
-    children_match = re.search(r'(?P<children>\d+)\s*(?:child|kid|kids|children)', text, re.IGNORECASE)
+    travelers_match = re.search(r'(?P<adults>\d+)\s*(?:people|persons|adult|adults|man|men|woman|women|lady|ladies)', text, re.IGNORECASE)
+    children_match = re.search(r'(?P<children>\d+)\s*(?:child|children)', text, re.IGNORECASE)
     infants_match = re.search(r'(?P<infants>\d+)\s*(?:infant|infants)', text, re.IGNORECASE)
-    
-    solo_match = re.search(r'\bsolo\b', text, re.IGNORECASE)
-    duo_match = re.search(r'\bduo\b', text, re.IGNORECASE)
+
+    solo_match = re.search(r'\b(?:solo|alone|me)\b', text, re.IGNORECASE)
+    duo_match = re.search(r'\b(?:duo|couple|pair|my partner and I|my wife and I|my husband and I)\b', text, re.IGNORECASE)
     trio_match = re.search(r'\btrio\b', text, re.IGNORECASE)
+    group_match = re.search(r'family of (\d+)|group of (\d+)', text, re.IGNORECASE)
+     
+    # Count occurrences of adult-related words
+    adult_words_match = len(re.findall(r'\b(?:man|men|woman|women|lady|ladies)\b', text, re.IGNORECASE))
+    
+    # Extract number of adults, ensuring at least 1 if words like "man" or "woman" are found
+    num_adults = int(travelers_match.group("adults")) if travelers_match else max(1, adult_words_match)
     
     travelers = {
-        "Adults": travelers_match.group("adults") if travelers_match else "Not specified",
-        "Children": children_match.group("children") if children_match else "0",
-        "Infants": infants_match.group("infants") if infants_match else "0"
+        "Adults": int(travelers_match.group("adults")) if travelers_match else 0,
+        "Children": int(children_match.group("children")) if children_match else 0,
+        "Infants": int(infants_match.group("infants")) if infants_match else 0
     }
-    
+
     if solo_match:
-       travelers["Adults"] = "1"
+        travelers["Adults"] = 1
     elif duo_match:
-       travelers["Adults"] = "2"   
+        travelers["Adults"] = 2
     elif trio_match:
-       travelers["Adults"] = "3"
+        travelers["Adults"] = 3
+    elif group_match:
+        total_people = int(group_match.group(1) or group_match.group(2))
+        if total_people > 2:
+            travelers["Adults"] = max(2, total_people - travelers["Children"] - travelers["Infants"])
     
     details["Number of Travelers"] = travelers
-
     # Extract transportation preferences
     transport_modes = {
         "flight": ["flight", "fly", "airplane", "aeroplane"],
