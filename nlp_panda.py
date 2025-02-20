@@ -142,7 +142,7 @@ def extract_details(text):
                 break
         
     # Extract number of travelers
-    travelers_match = re.search(r'(?P<adults>\d+)\s*(?:people|persons|adult|adults|man|men|woman|women|lady|ladies)', text, re.IGNORECASE)
+    travelers_match = re.search(r'(?P<adults>\d+)\s*(?:people|persons|adult|person|adults|man|men|woman|women|lady|ladies)', text, re.IGNORECASE)
     children_match = re.search(r'(?P<children>\d+)\s*(?:child|children)', text, re.IGNORECASE)
     infants_match = re.search(r'(?P<infants>\d+)\s*(?:infant|infants)', text, re.IGNORECASE)
 
