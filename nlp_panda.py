@@ -72,7 +72,7 @@ def extract_details(text):
     common_destinations = {"Goa", "Bali", "Paris", "New York", "Tokyo", "London", "Dubai", "Rome", "Bangkok"}
 
     # Regex backup to extract locations from text
-    location_match = re.findall(r'\b(?:to|visit|going to|in|at)\s+([A-Za-z\s]+)', text, re.IGNORECASE)
+    location_match = re.findall(r'\b(?:to|visit|going to|in|of|at)\s+([A-Za-z\s]+)', text, re.IGNORECASE)
 
     # Check for cities using geonamescache
     for word in text.split():
