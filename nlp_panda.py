@@ -16,9 +16,9 @@ import geonamescache
 def load_spacy_model():
     try:
        return spacy.load("en_core_web_lg")
-    except OSError as e:
-        print("Error: spaCy model not found. Make sure `en_core_web_lg` is installed.")
-        raise e
+    except OSError:
+        st.warning("Large model not found. Falling back to `en_core_web_sm`. Install `en_core_web_lg` for better accuracy.")
+        return spacy.load("en_core_web_sm")  # Fallback to small model
 nlp = load_spacy_model()
 
 # Load city database from geonamescache
