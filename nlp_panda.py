@@ -65,7 +65,11 @@ def extract_details(text):
     
     # Extract locations
     locations = [ent.text for ent in doc.ents if ent.label_ == ["GPE","LOC"]]
+    # Predefined list of known travel destinations as a backup
+    common_destinations = {"Goa", "Bali", "Paris", "New York", "Tokyo", "London", "Dubai", "Rome", "Bangkok"}
 
+    # Regex backup to extract locations from text
+    location_match = re.findall(r'\b(?:to|visit|going to|in|at)\s+([A-Za-z\s]+)', text, re.IGNORECASE)
     # Check for cities using geonamescache
     for word in text.split():
         if word.lower() in cities:
@@ -79,7 +83,11 @@ def extract_details(text):
         details["Destination"] = locations[1]
     elif len(locations) == 1:
         details["Destination"] = locations[0]
-    
+    elif location_match:
+        # Check if extracted location is in common destinations list
+        possible_dest = location_match[0].strip().title()
+        if possible_dest in common_destinations:
+            details["Destination"] = possible_dest
     # Extract duration
     duration_match = re.search(r'(?P<value>\d+)\s*[-]?\s*(?P<unit>day|days|night|nights|week|weeks|month|months)', text, re.IGNORECASE)
     duration_days = None
