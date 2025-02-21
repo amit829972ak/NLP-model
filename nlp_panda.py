@@ -15,10 +15,11 @@ import geonamescache
 @st.cache_resource
 def load_spacy_model():
     try:
-       return spacy.load("en_core_web_lg")
+        return spacy.load("en_core_web_lg")  # Load large model
     except OSError:
         st.warning("Large model not found. Falling back to `en_core_web_sm`. Install `en_core_web_lg` for better accuracy.")
         return spacy.load("en_core_web_sm")  # Fallback to small model
+
 nlp = load_spacy_model()
 
 # Load city database from geonamescache
@@ -49,6 +50,7 @@ def get_user_location():
 
 def extract_details(text):
     doc = nlp(text)
+    text_lower = text.lower()
     details = {
         "Starting Location": None,
         "Destination": None,
@@ -63,13 +65,15 @@ def extract_details(text):
         "Special Requirements": None
     }
     
-    # Extract locations
+    # Extract locations    
     locations = [ent.text for ent in doc.ents if ent.label_ == ["GPE","LOC"]]
+    
     # Predefined list of known travel destinations as a backup
     common_destinations = {"Goa", "Bali", "Paris", "New York", "Tokyo", "London", "Dubai", "Rome", "Bangkok"}
 
     # Regex backup to extract locations from text
     location_match = re.findall(r'\b(?:to|visit|going to|in|at)\s+([A-Za-z\s]+)', text, re.IGNORECASE)
+
     # Check for cities using geonamescache
     for word in text.split():
         if word.lower() in cities:
