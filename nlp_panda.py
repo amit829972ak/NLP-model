@@ -7,36 +7,34 @@ import pandas as pd
 from datetime import datetime, timedelta
 from dateparser.search import search_dates
 import openai
-import subprocess
 import geonamescache
+from word2number import w2n
 
 
 # Load spaCy model globally
 @st.cache_resource
 def load_spacy_model():
-    try:
-        return spacy.load("en_core_web_lg")  # Load large model
-    except OSError:
-        st.warning("Large model not found. Falling back to `en_core_web_sm`. Install `en_core_web_lg` for better accuracy.")
-        return spacy.load("en_core_web_sm")  # Fallback to small model
+    return spacy.load("en_core_web_trf")
 
 nlp = load_spacy_model()
-
 # Load city database from geonamescache
 gc = geonamescache.GeonamesCache()
 cities = {city["name"].lower(): city for city in gc.get_cities().values()}
 
 # Define seasonal mappings
 seasonal_mappings = {
-  "summer": "06-01",
-    "mid summer": "07-01",
-    "end of summer": "08-01",
-    "autumn": "09-01",
-    "monsoon": "09-01",
+    "summer": "06-01",
+    "mid summer": "07-15",
+    "end of summer": "08-25",
+    "autumn": "09-15",
+    "fall": "09-15",
+    "monsoon": "09-10",
     "winter": "12-01",
-    "spring": "04-01"  
+    "early winter": "11-15",
+    "late winter": "01-15",
+    "spring": "04-01"
 }
-# code for getting user live location (streamlit do not this live location feature) 
+# code for getting user live location
 def get_user_location():
     try:
         response = requests.get("https://ipinfo.io/json")
@@ -50,7 +48,8 @@ def get_user_location():
 
 def extract_details(text):
     doc = nlp(text)
-    text_lower = text.lower()
+    text_lower = text.lower()  # Convert text to lowercase for case-insensitive matching
+    
     details = {
         "Starting Location": None,
         "Destination": None,
@@ -65,23 +64,14 @@ def extract_details(text):
         "Special Requirements": None
     }
     
-    # Extract locations    
-    locations = [ent.text for ent in doc.ents if ent.label_ == ["GPE","LOC"]]
+    # Extract locations
+    locations = [ent.text for ent in doc.ents if ent.label_ == "GPE"]
     
+    # Regex backup to extract locations from text
+    location_match = re.findall(r'\b(?:to|visit|going to|in|at)\s+([A-Za-z\s]+)', text, re.IGNORECASE)
     # Predefined list of known travel destinations as a backup
     common_destinations = {"Goa", "Bali", "Paris", "New York", "Tokyo", "London", "Dubai", "Rome", "Bangkok"}
 
-    # Regex backup to extract locations from text
-    location_match = re.findall(r'\b(?:to|visit|going to|in|of|at)\s+([A-Za-z\s]+)', text, re.IGNORECASE)
-
-    # Check for cities using geonamescache
-    for word in text.split():
-        if word.lower() in cities:
-            locations.append(word)
-
-    # Remove duplicates
-    locations = list(set(locations))
-    
     if len(locations) > 1:
         details["Starting Location"] = locations[0]
         details["Destination"] = locations[1]
@@ -99,7 +89,7 @@ def extract_details(text):
         unit = duration_match.group("unit").lower()
         value = int(duration_match.group("value"))
         if "week" in unit:
-            duration_days = value * 7
+            duration_days = value * 7   
         elif "month" in unit:
             duration_days = value * 30
         else:
@@ -116,49 +106,69 @@ def extract_details(text):
         
         if duration_days:
             details["Trip Duration"] = f"{duration_days} days"
+            
     # Extract dates
-    date_range_match = re.search(r'(?P<start>\d{1,2} [A-Za-z]+) to (?P<end>\d{1,2} [A-Za-z]+)', text, re.IGNORECASE)
-    dates = []
+    date_range_match = re.search(r'(?P<start>\d{1,2} [A-Za-z]+ \d{4}) to (?P<end>\d{1,2} [A-Za-z]+ \d{4})', text, re.IGNORECASE)
+    
     if date_range_match:
         start_date_text = date_range_match.group("start")
         end_date_text = date_range_match.group("end")
+    else:
+        # Try extracting without the year, and assume the correct one
+        date_range_match = re.search(r'(?P<start>\d{1,2} [A-Za-z]+) to (?P<end>\d{1,2} [A-Za-z]+)', text, re.IGNORECASE)
+        if date_range_match:
+            current_year = datetime.today().year
+            start_date_text = f"{date_range_match.group('start')} {current_year}"
+            end_date_text = f"{date_range_match.group('end')} {current_year}"
+        else:
+            start_date_text, end_date_text = None, None
+
+    if start_date_text and end_date_text:
         start_date = dateparser.parse(start_date_text, settings={'PREFER_DATES_FROM': 'future'})
         end_date = dateparser.parse(end_date_text, settings={'PREFER_DATES_FROM': 'future'})
+
         if start_date and end_date:
+            # Correct the order if needed
+            if start_date > end_date:
+                start_date, end_date = end_date, start_date
+
             details["Start Date"] = start_date.strftime('%Y-%m-%d')
             details["End Date"] = end_date.strftime('%Y-%m-%d')
             details["Trip Duration"] = f"{(end_date - start_date).days} days"
+    
     else:
+        # Fallback: Use `search_dates` if the main regex fails
         extracted_dates = search_dates(text, settings={'PREFER_DATES_FROM': 'future'})
         if extracted_dates:
             dates = [d[1].strftime('%Y-%m-%d') for d in extracted_dates]
-        
-        if len(dates) > 1:
-            details["Start Date"], details["End Date"] = dates[:2]
-            start_date = datetime.strptime(details["Start Date"], "%Y-%m-%d")
-            end_date = datetime.strptime(details["End Date"], "%Y-%m-%d")
-            details["Trip Duration"] = f"{(end_date - start_date).days} days"
-        elif len(dates) == 1:
-            details["Start Date"] = dates[0]
-            if duration_days:
+            if len(dates) > 1:
+                details["Start Date"], details["End Date"] = dates[:2]
+                start_date = datetime.strptime(details["Start Date"], "%Y-%m-%d")
+                end_date = datetime.strptime(details["End Date"], "%Y-%m-%d")
+                details["Trip Duration"] = f"{(end_date - start_date).days} days"
+            elif len(dates) == 1 and duration_days:
+                details["Start Date"] = dates[0]
                 start_date = datetime.strptime(dates[0], "%Y-%m-%d")
                 details["End Date"] = (start_date + timedelta(days=duration_days)).strftime('%Y-%m-%d')
-        
-        for season, start_month_day in seasonal_mappings.items():
-            if re.search(r'\b' + re.escape(season) + r'\b', text.lower(), re.IGNORECASE):
-                today = datetime.today().year
-                start_date = f"{today}-{start_month_day}"
-                details["Start Date"] = start_date
-                if duration_days:
-                    details["End Date"] = (datetime.strptime(start_date, "%Y-%m-%d") + timedelta(days=duration_days)).strftime('%Y-%m-%d')
-                break
+
+    # **Extract seasonal dates before general dates**
+    for season, start_month_day in seasonal_mappings.items():
+        pattern = r'\b' + re.escape(season) + r'\b'  # Ensuring word boundaries for multi-word seasons
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            today = datetime.today().year
+            start_date = f"{today}-{start_month_day}"
+            details["Start Date"] = start_date
+            if duration_days:
+                details["End Date"] = (datetime.strptime(start_date, "%Y-%m-%d") + timedelta(days=duration_days)).strftime('%Y-%m-%d')
+            break    
+    
         
     # Extract number of travelers
-    travelers_match = re.search(r'(?P<adults>\d+)\s*(?:people|persons|adult|person|adults|man|men|woman|women|lady|ladies)', text, re.IGNORECASE)
-    children_match = re.search(r'(?P<children>\d+)\s*(?:child|children|kid|kids)', text, re.IGNORECASE)
+    travelers_match = re.search(r'(?P<adults>\d+)\s*(?:people|persons|adult|adults|men|women|ladies)', text, re.IGNORECASE)
+    children_match = re.search(r'(?P<children>\d+)\s*(?:child|children)', text, re.IGNORECASE)
     infants_match = re.search(r'(?P<infants>\d+)\s*(?:infant|infants)', text, re.IGNORECASE)
 
-    solo_match = re.search(r'\b(?:solo|alone|me)\b', text, re.IGNORECASE)
+    solo_match = re.search(r'\b(?:solo|alone|me|man|woman|lady)\b', text, re.IGNORECASE)
     duo_match = re.search(r'\b(?:duo|couple|pair|my partner and I|my wife and I|my husband and I)\b', text, re.IGNORECASE)
     trio_match = re.search(r'\btrio\b', text, re.IGNORECASE)
     group_match = re.search(r'family of (\d+)|group of (\d+)', text, re.IGNORECASE)
@@ -187,6 +197,7 @@ def extract_details(text):
             travelers["Adults"] = max(2, total_people - travelers["Children"] - travelers["Infants"])
     
     details["Number of Travelers"] = travelers
+
     # Extract transportation preferences
     transport_modes = {
         "flight": ["flight", "fly", "airplane", "aeroplane"],
@@ -233,7 +244,7 @@ def extract_details(text):
     
     # Extract trip type
     trip_type = {
-    "Adventure Travel": ["hiking", "skiing", "backpacking", "extreme sports"],
+    "Adventure Travel": ["hiking", "skiing", "extreme sports"],
     "Ecotourism": ["wildlife watching", "nature walks", "eco-lodging"],
     "Cultural Tourism": ["museum visits", "historical site tours", "local festivals"],
     "Historical Tourism": ["castle tours", "archaeological site visits", "war memorial tours"],
@@ -250,14 +261,14 @@ def extract_details(text):
     "Food Tourism": ["food tasting tours", "cooking classes", "street food exploration"],
     "Religious Tourism": ["pilgrimages", "monastery visits", "religious festivals"],
     "Digital Nomadism": ["co-working spaces", "long-term stays", "remote work-friendly cafes"],
-    "Family Travel": ["Family trip","theme parks","honeymoon", "kid-friendly resorts", "multi-generational travel","Family vacation"]
+    "Family Travel": ["theme parks", "kid-friendly resorts","family" ,"multi-generational travel","honeymoon"]
 }
     trip_type_matches = []
     for trip, keywords in trip_type.items():
         for keyword in keywords:
             if re.search(r'\b' + re.escape(keyword) + r'\b', text, re.IGNORECASE):
-               trip_type_matches.append(trip)
-               break
+                trip_type_matches.append(trip)
+                break
     
     details["Trip Type"] = trip_type_matches if trip_type_matches else "Not specified"
     
@@ -288,6 +299,8 @@ def extract_details(text):
     special_requirements = ["wheelchair access", "vegetarian meals", "vegan", "gluten-free"]
     found_requirements = [req for req in special_requirements if req in text.lower()]
     details["Special Requirements"] = ", ".join(found_requirements) if found_requirements else "Not specified"
+    
+    
     return details
 
 
@@ -337,7 +350,16 @@ if st.button("Extract Details"):
         # Generate and display the itinerary prompt
         prompt = generate_prompt(details)
         st.subheader("Itinerary Request Prompt")
-        st.write(prompt)
-        
+        st.write(prompt)    
     else:
         st.warning("Please enter some text to extract details.")
+     # Footer
+    st.markdown("---")
+    st.markdown("### 💡 Tips")
+    st.markdown("""
+    - Be specific about dates, locations, and number of travelers
+    - Include budget information if available
+    - Mention transportation and accommodation preferences
+    - Add any special requirements or considerations
+    """)
+    
