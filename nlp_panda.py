@@ -10,6 +10,7 @@ import openai
 import subprocess
 import geonamescache
 from openai import OpenAI
+from word2number import w2n
 
 # Load spaCy model globally
 @st.cache_resource
@@ -114,13 +115,20 @@ def extract_details(text):
     if destination:
         details["Destination"] = destination
     # Extract duration
-    duration_match = re.search(r'(?P<value>\d+)\s*[-]?\s*(?P<unit>day|days|night|nights|week|weeks|month|months)', text, re.IGNORECASE)
+    duration_match = re.search(r'(?P<value>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*[-]?\s*(?P<unit>day|days|night|nights|week|weeks|month|months)', text, re.IGNORECASE)
     duration_days = None
+
     if duration_match:
         unit = duration_match.group("unit").lower()
-        value = int(duration_match.group("value"))
+        value = duration_match.group("value").lower()
+
+        # Convert word-based numbers to digits
+        try:
+            value = int(value) if value.isdigit() else w2n.word_to_num(value)
+        except ValueError:
+            value = 1  # Default to 1 if conversion fails
         if "week" in unit:
-            duration_days = value * 7
+            duration_days = value * 7   
         elif "month" in unit:
             duration_days = value * 30
         else:
@@ -137,10 +145,12 @@ def extract_details(text):
         
         if duration_days:
             details["Trip Duration"] = f"{duration_days} days"
+            
     # Extract dates
-    date_range_match = re.search(r'(?P<start>\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+\s*(?:\d{4})?)\s+to\s+(?P<end>\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+\s*(?:\d{4})?)',
-        text, re.IGNORECASE
-    )
+    date_range_match = re.search(
+    r'(?P<start>\d{1,2}(?:st|nd|rd|th)? [A-Za-z]+ \d{4}) to (?P<end>\d{1,2}(?:st|nd|rd|th)? [A-Za-z]+ \d{4})',
+    text, re.IGNORECASE
+)
     dates = []
     if date_range_match:
         start_date_text = date_range_match.group("start")
@@ -167,15 +177,16 @@ def extract_details(text):
                 start_date = datetime.strptime(dates[0], "%Y-%m-%d")
                 details["End Date"] = (start_date + timedelta(days=duration_days)).strftime('%Y-%m-%d')
         
-        for season, start_month_day in seasonal_mappings.items():
-            if re.search(r'\b' + re.escape(season) + r'\b', text.lower(), re.IGNORECASE):
-                today = datetime.today().year
-                start_date = f"{today}-{start_month_day}"
-                details["Start Date"] = start_date
-                if duration_days:
-                    details["End Date"] = (datetime.strptime(start_date, "%Y-%m-%d") + timedelta(days=duration_days)).strftime('%Y-%m-%d')
-                break
-        
+    # **Extract seasonal dates before general dates**
+    for season, start_month_day in seasonal_mappings.items():
+        pattern = r'\b' + re.escape(season) + r'\b'  # Ensuring word boundaries for multi-word seasons
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            today = datetime.today().year
+            start_date = f"{today}-{start_month_day}"
+            details["Start Date"] = start_date
+            if duration_days:
+                details["End Date"] = (datetime.strptime(start_date, "%Y-%m-%d") + timedelta(days=duration_days)).strftime('%Y-%m-%d')
+            break
     # Extract number of travelers
     travelers_match = re.search(r'(?P<adults>\d+)\s*(?:people|persons|adult|person|adults|man|men|woman|women|lady|ladies)', text, re.IGNORECASE)
     children_match = re.search(r'(?P<children>\d+)\s*(?:child|children)', text, re.IGNORECASE)
