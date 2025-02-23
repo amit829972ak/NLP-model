@@ -66,32 +66,53 @@ def extract_details(text):
     }
     
     # Extract locations    
-    locations = [ent.text for ent in doc.ents if ent.label_ == ["GPE","LOC"]]
-    
-    # Predefined list of known travel destinations as a backup
     common_destinations = {"Goa", "Bali", "Paris", "New York", "Tokyo", "London", "Dubai", "Rome", "Bangkok"}
 
-    # Regex backup to extract locations from text
-    location_match = re.findall(r'\b(?:to|visit|going to|in|at|of)\s+([A-Za-z\s]+)', text, re.IGNORECASE)
+    locations = [ent.text for ent in doc.ents if ent.label_ in {"GPE", "LOC"}]
 
-    # Check for cities using geonamescache
-    for word in text.split():
-        if word.lower() in cities:
-            locations.append(word)
-
-    # Remove duplicates
-    locations = list(set(locations))
+    # Backup regex-based location extraction
+    regex_matches = re.findall(r'\b(?:from|to|visit|going to|in|at|of)\s+([A-Z][a-z]+(?:\s[A-Z][a-z]+)*)', text)
     
-    if len(locations) > 1:
-        details["Starting Location"] = locations[0]
-        details["Destination"] = locations[1]
-    elif len(locations) == 1:
-        details["Destination"] = locations[0]
-    elif location_match:
-        # Check if extracted location is in common destinations list
-        possible_dest = location_match[0].strip().title()
-        if possible_dest in common_destinations:
-            details["Destination"] = possible_dest
+    # Check for cities in text using geonamescache
+    extracted_cities = []
+    words = text.split()
+    for i in range(len(words)):
+        for j in range(i + 1, min(i + 3, len(words))):  # Check up to 3-word phrases
+            phrase = " ".join(words[i:j+1])
+            if phrase.lower() in cities or phrase in common_destinations:
+                extracted_cities.append(phrase)
+
+    # Combine all sources and remove duplicates while preserving order
+    seen = set()
+    all_locations = [loc for loc in locations + regex_matches + extracted_cities if not (loc in seen or seen.add(loc))]
+
+    # Determine starting location and destination using dependency parsing
+    start_location, destination = None, None
+
+    for token in doc:
+        if token.dep_ in {"prep", "agent", "mark"} and token.text.lower() in {"from"}:
+            next_token = token.nbor(1) if token.i + 1 < len(doc) else None
+            if next_token and next_token.ent_type_ in {"GPE", "LOC"}:
+                start_location = next_token.text
+        elif token.dep_ in {"prep", "agent", "mark"} and token.text.lower() in {"to", "toward"}:
+            next_token = token.nbor(1) if token.i + 1 < len(doc) else None
+            if next_token and (next_token.ent_type_ in {"GPE", "LOC"} or next_token.text in common_destinations):
+                destination = next_token.text
+
+    # If dependency parsing fails, use list extraction
+    if not start_location and not destination:
+        if len(all_locations) > 1:
+            start_location = all_locations[0]
+            destination = all_locations[1]
+        elif len(all_locations) == 1:
+            destination = all_locations[0]
+
+    # Construct final details dictionary
+    details = {}
+    if start_location:
+        details["Starting Location"] = start_location
+    if destination:
+        details["Destination"] = destination
     # Extract duration
     duration_match = re.search(r'(?P<value>\d+)\s*[-]?\s*(?P<unit>day|days|night|nights|week|weeks|month|months)', text, re.IGNORECASE)
     duration_days = None
@@ -117,7 +138,9 @@ def extract_details(text):
         if duration_days:
             details["Trip Duration"] = f"{duration_days} days"
     # Extract dates
-    date_range_match = re.search(r'(?P<start>\d{1,2} [A-Za-z]+) to (?P<end>\d{1,2} [A-Za-z]+)', text, re.IGNORECASE)
+    date_range_match = re.search(r'(?P<start>\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+\s*(?:\d{4})?)\s+to\s+(?P<end>\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+\s*(?:\d{4})?)',
+        text, re.IGNORECASE
+    )
     dates = []
     if date_range_match:
         start_date_text = date_range_match.group("start")
@@ -259,7 +282,7 @@ def extract_details(text):
                trip_type_matches.append(trip)
                break
     
-    details["Trip Type"] = trip_type_matches if trip_type_matches else "Not specified"
+    details["Trip Type"] = trip_type_matches if trip_type_matches else "Leisure"
     
     
     
@@ -293,31 +316,52 @@ def extract_details(text):
 
 # Prompt Generation Agent
 def generate_prompt(details):
-    prompt = f"Generate a detailed itinerary for a {details['Trip Type']} trip to {details['Destination']} for {details['Number of Travelers']['Adults']} adults"
+    budget_range = details.get("Budget Range", "").strip()
+    if not budget_range:
+        return "❗ Please specify your budget as a range (e.g., 1000-2000)." 
     
-    if details['Number of Travelers']['Children'] != "0":
+    prompt = f"Generate a detailed itinerary for a {details.get('Trip Type', 'general')} trip to {details.get('Destination', 'an unknown destination')} for {details['Number of Travelers'].get('Adults', '1')} adult"
+
+    # Pluralize 'adults' correctly
+    if details['Number of Travelers'].get('Adults', '1') != "1":
+        prompt += "s"
+    
+    # Add children & infants if applicable
+    if details['Number of Travelers'].get('Children', "0") != "0":
         prompt += f" and {details['Number of Travelers']['Children']} children"
     
-    if details['Number of Travelers']['Infants'] != "0":
+    if details['Number of Travelers'].get('Infants', "0") != "0":
         prompt += f" and {details['Number of Travelers']['Infants']} infants"
     
-    prompt += f", starting from {details['Starting Location']} and departing on {details['Start Date']}."
+    # Starting location and start date (only if both exist)
+    if "Starting Location" in details and "Start Date" in details:
+        prompt += f", starting from {details['Starting Location']} and departing on {details['Start Date']}"
+    elif "Starting Location" in details:
+        prompt += f", starting from {details['Starting Location']}"
+    elif "Start Date" in details:
+        prompt += f", departing on {details['Start Date']}"
     
-    if details["End Date"]:
-        prompt += f" The trip ends on {details['End Date']}."
+    # End date
+    if details.get("End Date"):
+        prompt += f". The trip ends on {details['End Date']}."
     
-    prompt += f" Please consider a {details['Budget Range']} budget and provide accommodation, dining, and activity recommendations."
+    # Budget and general recommendations
+    prompt += f" Please consider a {details.get('Budget Range', 'moderate')} budget and provide accommodation, dining, and activity recommendations."
     
-    if details["Transportation Preferences"] != "Any":
+    # Transportation preferences
+    if details.get("Transportation Preferences") and details["Transportation Preferences"] != "Any":
         prompt += f" Suggested transportation methods include: {', '.join(details['Transportation Preferences'])}."
     
-    if details["Accommodation Preferences"] != "Any":
-        prompt += f" Accommodation preference: {details['Accommodation Preferences']}."
+    # Accommodation preferences
+    if details.get("Accommodation Preferences") and details["Accommodation Preferences"] != "Any":
+        prompt += f" Preferred accommodation: {details['Accommodation Preferences']}."
     
-    if details["Special Requirements"] != "None":
+    # Special requirements
+    if details.get("Special Requirements") and details["Special Requirements"] not in ["None", "", None]:
         prompt += f" Special requirements: {details['Special Requirements']}."
     
     return prompt
+
 
 st.title("Travel Plan Extractor")
 
@@ -341,4 +385,14 @@ if st.button("Extract Details"):
         
     else:
         st.warning("Please enter some text to extract details.")
-        
+     # Footer
+    st.markdown("---")
+    st.markdown("### 💡 Tips")
+    st.markdown("""
+    - Be specific about dates, locations, and number of travelers
+    - Include budget information if available
+    - Mention transportation and accommodation preferences
+    - Add any special requirements or considerations
+    """)
+    
+    
