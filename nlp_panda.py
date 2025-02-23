@@ -108,11 +108,19 @@ def extract_details(text):
             details["Trip Duration"] = f"{duration_days} days"
             
     # Extract dates
-    date_range_match = re.search(r'(?P<start>\d{1,2} [A-Za-z]+ \d{4}) to (?P<end>\d{1,2} [A-Za-z]+ \d{4})', text, re.IGNORECASE)
-    
+    def clean_ordinal_suffix(date_text):
+        return re.sub(r'(\d+)(st|nd|rd|th)', r'\1', date_text)
+    date_range_match = re.search(
+        r'(?P<start>\d{1,2}(?:st|nd|rd|th)? [A-Za-z]+ \d{4}) to (?P<end>\d{1,2}(?:st|nd|rd|th)? [A-Za-z]+ \d{4})',
+        text, re.IGNORECASE
+    )
     if date_range_match:
-        start_date_text = date_range_match.group("start")
-        end_date_text = date_range_match.group("end")
+        start_date_text = clean_ordinal_suffix(date_range_match.group("start"))
+        end_date_text = clean_ordinal_suffix(date_range_match.group("end"))
+
+        start_date = dateparser.parse(start_date_text, settings={'PREFER_DATES_FROM': 'future'})
+        end_date = dateparser.parse(end_date_text, settings={'PREFER_DATES_FROM': 'future'})
+
     else:
         # Try extracting without the year, and assume the correct one
         date_range_match = re.search(r'(?P<start>\d{1,2} [A-Za-z]+) to (?P<end>\d{1,2} [A-Za-z]+)', text, re.IGNORECASE)
