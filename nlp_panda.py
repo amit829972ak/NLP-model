@@ -59,51 +59,23 @@ def extract_details(text):
     }
     
     # Extract locations
-    locations = [ent.text for ent in doc.ents if ent.label_ in {"GPE", "LOC"}]    
-    common_destinations = {"goa","Goa","French countryside","goa","Maldives", "Bali", "Paris", "New York", "Los Angeles", "San Francisco", "Tokyo", "London", "Dubai", "Rome", "Bangkok"}
-    # Backup regex-based location extraction
-    regex_matches = re.findall(r'\b(?:from|to|visit|going to|in|at|of|to the|toward the)\s+([A-Z][a-z]+(?:\s[A-Z][a-z]+)*)', text)
+    locations = [ent.text for ent in doc.ents if ent.label_ == "GPE"]
     
-    # Check for cities in text using geonamescache
-    extracted_cities = []
-    words = text.split()
-    for i in range(len(words)):
-        for j in range(i + 1, min(i + 3, len(words))):  # Check up to 3-word phrases
-            phrase = " ".join(words[i:j+1])
-            if phrase.lower() in cities or phrase in common_destinations:
-                extracted_cities.append(phrase)
+    # Regex backup to extract locations from text
+    location_match = re.findall(r'\b(?:to|visit|going to|in|at)\s+([A-Za-z\s]+)', text, re.IGNORECASE)
+    # Predefined list of known travel destinations as a backup
+    common_destinations = {"Goa", "Bali", "Paris", "New York", "Tokyo", "London", "Dubai", "Rome", "Bangkok"}
 
-    # Combine all sources and remove duplicates while preserving order
-    seen = set()
-    all_locations = [loc for loc in locations + regex_matches + extracted_cities if not (loc in seen or seen.add(loc))]
-
-    # Determine starting location and destination using dependency parsing
-    start_location, destination = None, None
-
-    for token in doc:
-        if token.dep_ in {"prep", "agent", "mark"} and token.text.lower() in {"from"}:
-            next_token = token.nbor(1) if token.i + 1 < len(doc) else None
-            if next_token and next_token.ent_type_ in {"GPE", "LOC"}:
-                start_location = next_token.text
-        elif token.dep_ in {"prep", "agent", "mark"} and token.text.lower() in {"to", "toward"}:
-            next_token = token.nbor(1) if token.i + 1 < len(doc) else None
-            if next_token and (next_token.ent_type_ in {"GPE", "LOC"} or next_token.text in common_destinations):
-                destination = next_token.text
-
-    # If dependency parsing fails, use list extraction
-    if not start_location and not destination:
-        if len(all_locations) > 1:
-            start_location = all_locations[0]
-            destination = all_locations[1]
-        elif len(all_locations) == 1:
-            destination = all_locations[0]
-
-    # Construct final details dictionary
-    details = {}
-    if start_location:
-        details["Starting Location"] = start_location
-    if destination:
-        details["Destination"] = destination
+    if len(locations) > 1:
+        details["Starting Location"] = locations[0]
+        details["Destination"] = locations[1]
+    elif len(locations) == 1:
+        details["Destination"] = locations[0]
+    elif location_match:
+        # Check if extracted location is in common destinations list
+        possible_dest = location_match[0].strip().title()
+        if possible_dest in common_destinations:
+            details["Destination"] = possible_dest
     # Extract duration
     duration_match = re.search(r'(?P<value>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*[-]?\s*(?P<unit>day|days|night|nights|week|weeks|month|months)', text, re.IGNORECASE)
     duration_days = None
