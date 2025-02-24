@@ -264,12 +264,38 @@ def extract_details(text):
     
     # Extract budget range
     # Extract budget details
+    # Budget classification keywords
+    budget_keywords = {
+        "friendly budget": "Mid-range Budget",
+        "mid-range budget": "Mid-range",
+        "luxury": "Luxury",
+        "cheap": "Low Budget",
+        "expensive": "Luxury",
+        "premium": "Luxury",
+        "high-range": "Luxury"
+    }
+    
+    budget_matches = []
+    
+    # Check for budget keywords in text
+    for key, val in budget_keywords.items():
+        if re.search(r'\b' + re.escape(key) + r'\b', text, re.IGNORECASE):
+            budget_matches.append(val)
+    
+    # Fallback: If keyword matching fails, check for direct text match
+    if not budget_matches:
+        for key, val in budget_keywords.items():
+            if key.lower() in text.lower():
+                budget_matches.append(val)
+    
+    # Default budget classification if nothing is found
+    details["Budget Range"] = budget_matches[0] if budget_matches else "Mid-range"
+
+    # Budget amount extraction (prioritized over keyword classification)
     budget_match = re.search(r'\b(?:budget|cost|price)\s*(?:of\s*)?\$?([\d,]+)(?:\s*(?:USD|dollars))?\b', text, re.IGNORECASE)
     if budget_match:
         details["Budget Range"] = f"${budget_match.group(1).replace(',', '')}"  # Remove commas for consistency
 
- 
-    
     # Extract trip type
     trip_type = {
     "Adventure Travel": ["surfing","cycling","Scuba diving","hiking","trekking","camping", "skiing","ski", "backpacking", "extreme sports"],
