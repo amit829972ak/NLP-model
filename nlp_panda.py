@@ -76,13 +76,6 @@ def extract_details(text):
         possible_dest = location_match[0].strip().title()
         if possible_dest in common_destinations:
             details["Destination"] = possible_dest
-
-    # Construct final details dictionary
-    details = {}
-    if start_location:
-        details["Starting Location"] = start_location
-    if destination:
-        details["Destination"] = destination
     # Extract duration
     duration_match = re.search(r'(?P<value>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*[-]?\s*(?P<unit>day|days|night|nights|week|weeks|month|months)', text, re.IGNORECASE)
     duration_days = None
