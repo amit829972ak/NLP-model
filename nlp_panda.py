@@ -58,24 +58,52 @@ def extract_details(text):
         "Special Requirements": None
     }
     
-    # Extract locations    
-    locations = [ent.text for ent in doc.ents if ent.label_ == "GPE"]
+    # Extract locations
+    locations = [ent.text for ent in doc.ents if ent.label_ in {"GPE", "LOC"}]    
+    common_destinations = {"goa","Goa","French countryside","goa","Maldives", "Bali", "Paris", "New York", "Los Angeles", "San Francisco", "Tokyo", "London", "Dubai", "Rome", "Bangkok"}
+    # Backup regex-based location extraction
+    regex_matches = re.findall(r'\b(?:from|to|visit|going to|in|at|of|to the|toward the)\s+([A-Z][a-z]+(?:\s[A-Z][a-z]+)*)', text)
     
-    # Regex backup to extract locations from text
-    location_match = re.findall(r'\b(?:to|visit|going to|in|at)\s+([A-Za-z\s]+)', text, re.IGNORECASE)
-    # Predefined list of known travel destinations as a backup
-    common_destinations = {"Goa", "Bali", "Paris", "New York", "Tokyo", "London", "Dubai", "Rome", "Bangkok"}
+    # Check for cities in text using geonamescache
+    extracted_cities = []
+    words = text.split()
+    for i in range(len(words)):
+        for j in range(i + 1, min(i + 3, len(words))):  # Check up to 3-word phrases
+            phrase = " ".join(words[i:j+1])
+            if phrase.lower() in cities or phrase in common_destinations:
+                extracted_cities.append(phrase)
 
-    if len(locations) > 1:
-        details["Starting Location"] = locations[0]
-        details["Destination"] = locations[1]
-    elif len(locations) == 1:
-        details["Destination"] = locations[0]
-    elif location_match:
-        # Check if extracted location is in common destinations list
-        possible_dest = location_match[0].strip().title()
-        if possible_dest in common_destinations:
-            details["Destination"] = possible_dest
+    # Combine all sources and remove duplicates while preserving order
+    seen = set()
+    all_locations = [loc for loc in locations + regex_matches + extracted_cities if not (loc in seen or seen.add(loc))]
+
+    # Determine starting location and destination using dependency parsing
+    start_location, destination = None, None
+
+    for token in doc:
+        if token.dep_ in {"prep", "agent", "mark"} and token.text.lower() in {"from"}:
+            next_token = token.nbor(1) if token.i + 1 < len(doc) else None
+            if next_token and next_token.ent_type_ in {"GPE", "LOC"}:
+                start_location = next_token.text
+        elif token.dep_ in {"prep", "agent", "mark"} and token.text.lower() in {"to", "toward"}:
+            next_token = token.nbor(1) if token.i + 1 < len(doc) else None
+            if next_token and (next_token.ent_type_ in {"GPE", "LOC"} or next_token.text in common_destinations):
+                destination = next_token.text
+
+    # If dependency parsing fails, use list extraction
+    if not start_location and not destination:
+        if len(all_locations) > 1:
+            start_location = all_locations[0]
+            destination = all_locations[1]
+        elif len(all_locations) == 1:
+            destination = all_locations[0]
+
+    # Construct final details dictionary
+    details = {}
+    if start_location:
+        details["Starting Location"] = start_location
+    if destination:
+        details["Destination"] = destination
     # Extract duration
     duration_match = re.search(r'(?P<value>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*[-]?\s*(?P<unit>day|days|night|nights|week|weeks|month|months)', text, re.IGNORECASE)
     duration_days = None
@@ -109,21 +137,26 @@ def extract_details(text):
             details["Trip Duration"] = f"{duration_days} days"
             
     # Extract dates
+    text_lower = text.lower()
+    
+    # Enhanced regex for extracting date ranges in multiple formats
+    
     date_range_match = re.search(
-        r'(?P<month>[A-Za-z]+)?\s*(?P<start_day>\d{1,2})(?:st|nd|rd|th)?\s*(?:-|to|through)\s*'
-        r'(?P<end_day>\d{1,2})(?:st|nd|rd|th)?\s*(?P<end_month>[A-Za-z]+)?(?:,\s*(?P<year>\d{4}))?',
+        r'(?P<start_day>\d{1,2})(?:st|nd|rd|th)?\s*(?P<start_month>[A-Za-z]+)?,?\s*(?P<start_year>\d{4})?\s*(?:-|to|through)\s*'
+        r'(?P<end_day>\d{1,2})(?:st|nd|rd|th)?\s*(?P<end_month>[A-Za-z]+)?,?\s*(?P<end_year>\d{4})?',
         text, re.IGNORECASE
     )
-    dates=[]
     if date_range_match:
         start_day = date_range_match.group("start_day")
-        start_month = date_range_match.group("month") or date_range_match.group("end_month")
+        start_month = date_range_match.group("start_month") or date_range_match.group("end_month")
+        start_year = date_range_match.group("start_year") or date_range_match.group("end_year") or str(datetime.today().year)
+        
         end_day = date_range_match.group("end_day")
         end_month = date_range_match.group("end_month") or start_month
-        year = date_range_match.group("year") or str(datetime.today().year)
+        end_year = date_range_match.group("end_year") or start_year
         
-        start_date_text = f"{start_month} {start_day}, {year}"
-        end_date_text = f"{end_month} {end_day}, {year}"
+        start_date_text = f"{start_month} {start_day}, {start_year}"
+        end_date_text = f"{end_month} {end_day}, {end_year}"
         
         start_date = dateparser.parse(start_date_text, settings={'PREFER_DATES_FROM': 'future'})
         end_date = dateparser.parse(end_date_text, settings={'PREFER_DATES_FROM': 'future'})
@@ -147,8 +180,45 @@ def extract_details(text):
                 start_date = datetime.strptime(dates[0], "%Y-%m-%d")
                 details["End Date"] = (start_date + timedelta(days=duration_days)).strftime('%Y-%m-%d')
     
-    # 2. **Date Range Parsing with Improved Year Handling**
-    
+    date_range_match = re.search(
+        r'(?P<start_month>[A-Za-z]+)?\s*(?P<start_day>\d{1,2})(?:st|nd|rd|th)?(?:,\s*)?(?P<start_year>\d{4})?\s*(?:-|to|through)\s*'
+        r'(?P<end_month>[A-Za-z]+)?\s*(?P<end_day>\d{1,2})(?:st|nd|rd|th)?(?:,\s*)?(?P<end_year>\d{4})?',
+        text, re.IGNORECASE
+    )
+    if date_range_match:
+        start_day = date_range_match.group("start_day")
+        start_month = date_range_match.group("start_month") or date_range_match.group("end_month")
+        start_year = date_range_match.group("start_year") or date_range_match.group("end_year") or str(datetime.today().year)
+        
+        end_day = date_range_match.group("end_day")
+        end_month = date_range_match.group("end_month") or start_month
+        end_year = date_range_match.group("end_year") or start_year
+        
+        start_date_text = f"{start_month} {start_day}, {start_year}"
+        end_date_text = f"{end_month} {end_day}, {end_year}"
+        
+        start_date = dateparser.parse(start_date_text, settings={'PREFER_DATES_FROM': 'future'})
+        end_date = dateparser.parse(end_date_text, settings={'PREFER_DATES_FROM': 'future'})
+        
+        if start_date and end_date:
+            details["Start Date"] = start_date.strftime('%Y-%m-%d')
+            details["End Date"] = end_date.strftime('%Y-%m-%d')
+            details["Trip Duration"] = f"{(end_date - start_date).days} days"
+    else:
+        extracted_dates = search_dates(text, settings={'PREFER_DATES_FROM': 'future'})
+        dates = [d[1].strftime('%Y-%m-%d') for d in extracted_dates] if extracted_dates else []
+        
+        if len(dates) > 1:
+            details["Start Date"], details["End Date"] = dates[:2]
+            start_date = datetime.strptime(details["Start Date"], "%Y-%m-%d")
+            end_date = datetime.strptime(details["End Date"], "%Y-%m-%d")
+            details["Trip Duration"] = f"{(end_date - start_date).days} days"
+        elif len(dates) == 1:
+            details["Start Date"] = dates[0]
+            if "duration_days" in locals():
+                start_date = datetime.strptime(dates[0], "%Y-%m-%d")
+                details["End Date"] = (start_date + timedelta(days=duration_days)).strftime('%Y-%m-%d')
+
     if seasonal_mappings:
         for season, start_month_day in seasonal_mappings.items():
             pattern = r'\b' + re.escape(season) + r'\b'
@@ -158,7 +228,7 @@ def extract_details(text):
                 details["Start Date"] = start_date
                 if "duration_days" in locals():
                     details["End Date"] = (datetime.strptime(start_date, "%Y-%m-%d") + timedelta(days=duration_days)).strftime('%Y-%m-%d')
-                break   
+                break    
     
     # Extract number of travelers
     travelers_match = re.search(r'(?P<adults>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:people|persons|adult|person|adults|man|men|woman|women|lady|ladies|climber|traveler)',text, re.IGNORECASE)
@@ -228,8 +298,7 @@ def extract_details(text):
                 break
     
     details["Transportation Preferences"] = transport_matches if transport_matches else "Any"
-    
-    # Extract budget range
+
     # Extract budget details
     # Budget classification keywords
     budget_keywords = {
@@ -263,6 +332,8 @@ def extract_details(text):
     if budget_match:
         details["Budget Range"] = f"${budget_match.group(1).replace(',', '')}"  # Remove commas for consistency
 
+ 
+    
     # Extract trip type
     trip_type = {
     "Adventure Travel": ["surfing","cycling","Scuba diving","hiking","trekking","camping", "skiing","ski", "backpacking", "extreme sports"],
@@ -403,3 +474,5 @@ if st.button("Extract Details"):
     - Mention transportation and accommodation preferences
     - Add any special requirements or considerations
     """)
+    
+    
