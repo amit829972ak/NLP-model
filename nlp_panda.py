@@ -30,24 +30,16 @@ cities = {city["name"].lower(): city for city in gc.get_cities().values()}
 # Define seasonal mappings
 seasonal_mappings = {
   "summer": "06-01",
-    "mid summer": "07-01",
-    "end of summer": "08-01",
-    "autumn": "09-01",
-    "monsoon": "09-01",
+    "mid summer": "07-15",
+    "end of summer": "08-25",
+    "autumn": "09-15",
+    "fall": "09-15",
+    "monsoon": "09-10",
     "winter": "12-01",
+    "early winter": "11-15",
+    "late winter": "01-15",
     "spring": "04-01"  
 }
-# code for getting user live location (streamlit do not this live location feature) 
-def get_user_location():
-    try:
-        response = requests.get("https://ipinfo.io/json")
-        data = response.json()
-        city = data.get("city", "Unknown City")
-        region = data.get("region", "Unknown State")
-        country = data.get("country", "Unknown Country")
-        return f"{city}, {region}, {country}"
-    except Exception:
-        return "Location Unavailable"
 
 def extract_details(text):
     doc = nlp(text)
@@ -67,12 +59,12 @@ def extract_details(text):
     }
     
     # Extract locations    
-    common_destinations = {"Goa", "Bali", "Paris", "New York", "Tokyo", "London", "Dubai", "Rome", "Bangkok"}
+    common_destinations = {"goa","Goa","French countryside","goa","Maldives", "Bali", "Paris", "New York", "Los Angeles", "San Francisco", "Tokyo", "London", "Dubai", "Rome", "Bangkok"}
 
     locations = [ent.text for ent in doc.ents if ent.label_ in {"GPE", "LOC"}]
 
     # Backup regex-based location extraction
-    regex_matches = re.findall(r'\b(?:from|to|visit|going to|in|at|of)\s+([A-Z][a-z]+(?:\s[A-Z][a-z]+)*)', text)
+    regex_matches = re.findall(r'\b(?:from|to|visit|going to|in|at|of|to the|toward the)\s+([A-Z][a-z]+(?:\s[A-Z][a-z]+)*)', text)
     
     # Check for cities in text using geonamescache
     extracted_cities = []
@@ -147,24 +139,37 @@ def extract_details(text):
             details["Trip Duration"] = f"{duration_days} days"
             
     # Extract dates
+    # 1. **Seasonal Date Extraction First** (To avoid overwriting valid parsed dates later)
+    
+    
+    # 2. **Date Range Parsing with Improved Year Handling**
     date_range_match = re.search(
-    r'(?P<start>\d{1,2}(?:st|nd|rd|th)? [A-Za-z]+ \d{4}) to (?P<end>\d{1,2}(?:st|nd|rd|th)? [A-Za-z]+ \d{4})',
-    text, re.IGNORECASE
-)
-    dates = []
+        r'(?P<month>[A-Za-z]+)\s*(?P<start>\d{1,2})(?:st|nd|rd|th)?\s*(?:-|to|through)\s*'
+        r'(?P<end>\d{1,2})(?:st|nd|rd|th)?(?:,\s*(?P<year>\d{4}))?',
+        text, re.IGNORECASE
+    )
+    dates=[]
     if date_range_match:
-        start_date_text = date_range_match.group("start")
-        end_date_text = date_range_match.group("end")
+        month = date_range_match.group("month")
+        start_day = date_range_match.group("start")
+        end_day = date_range_match.group("end")
+        year = date_range_match.group("year") or str(datetime.today().year)  # Default to current year if missing
+        
+        start_date_text = f"{month} {start_day}, {year}"
+        end_date_text = f"{month} {end_day}, {year}"
+        
         start_date = dateparser.parse(start_date_text, settings={'PREFER_DATES_FROM': 'future'})
         end_date = dateparser.parse(end_date_text, settings={'PREFER_DATES_FROM': 'future'})
+        
         if start_date and end_date:
             details["Start Date"] = start_date.strftime('%Y-%m-%d')
             details["End Date"] = end_date.strftime('%Y-%m-%d')
             details["Trip Duration"] = f"{(end_date - start_date).days} days"
+    
     else:
+        # 3. **Fallback: Extract Single Dates & Handle Missing End Date**
         extracted_dates = search_dates(text, settings={'PREFER_DATES_FROM': 'future'})
-        if extracted_dates:
-            dates = [d[1].strftime('%Y-%m-%d') for d in extracted_dates]
+        dates = [d[1].strftime('%Y-%m-%d') for d in extracted_dates] if extracted_dates else []
         
         if len(dates) > 1:
             details["Start Date"], details["End Date"] = dates[:2]
@@ -186,29 +191,44 @@ def extract_details(text):
             details["Start Date"] = start_date
             if duration_days:
                 details["End Date"] = (datetime.strptime(start_date, "%Y-%m-%d") + timedelta(days=duration_days)).strftime('%Y-%m-%d')
-            break
+            break    
+    
     # Extract number of travelers
-    travelers_match = re.search(r'(?P<adults>\d+)\s*(?:people|persons|adult|person|adults|man|men|woman|women|lady|ladies)', text, re.IGNORECASE)
-    children_match = re.search(r'(?P<children>\d+)\s*(?:child|children)', text, re.IGNORECASE)
-    infants_match = re.search(r'(?P<infants>\d+)\s*(?:infant|infants)', text, re.IGNORECASE)
+    travelers_match = re.search(r'(?P<adults>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:people|persons|adult|person|adults|man|men|woman|women|lady|ladies|climber|traveler)',text, re.IGNORECASE)
+    children_match = re.search(r'(?P<children>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:child|children)', text, re.IGNORECASE)
+    infants_match = re.search(r'(?P<infants>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:infant|infants)', text, re.IGNORECASE)
 
     solo_match = re.search(r'\b(?:solo|alone|me)\b', text, re.IGNORECASE)
-    duo_match = re.search(r'\b(?:duo|couple|pair|my partner and I|my wife and I|my husband and I)\b', text, re.IGNORECASE)
+    duo_match = re.search(r'\b(?:duo|honeymoon|couple|pair|my partner and I|my wife and I|my husband and I)\b', text, re.IGNORECASE)
     trio_match = re.search(r'\btrio\b', text, re.IGNORECASE)
     group_match = re.search(r'family of (\d+)|group of (\d+)', text, re.IGNORECASE)
      
     # Count occurrences of adult-related words
     adult_words_match = len(re.findall(r'\b(?:man|men|woman|women|lady|ladies)\b', text, re.IGNORECASE))
-    
-    # Extract number of adults, ensuring at least 1 if words like "man" or "woman" are found
-    num_adults = int(travelers_match.group("adults")) if travelers_match else max(1, adult_words_match)
-    
-    travelers = {
-        "Adults": int(travelers_match.group("adults")) if travelers_match else 0,
-        "Children": int(children_match.group("children")) if children_match else 0,
-        "Infants": int(infants_match.group("infants")) if infants_match else 0
-    }
+    number_words = {
+    "one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
+    "six": "6", "seven": "7", "eight": "8", "nine": "9","ten": "10"}
 
+    # Convert written numbers for adults
+    num_adults_text = travelers_match.group("adults") if travelers_match else "0"
+    num_adults_text = number_words.get(num_adults_text.lower(), num_adults_text)
+    num_adults = int(num_adults_text)
+
+    # Convert written numbers for children
+    num_children_text = children_match.group("children") if children_match else "0"
+    num_children_text = number_words.get(num_children_text.lower(), num_children_text)
+    num_children = int(num_children_text)
+
+    # Convert written numbers for infants
+    num_infants_text = infants_match.group("infants") if infants_match else "0"
+    num_infants_text = number_words.get(num_infants_text.lower(), num_infants_text)
+    num_infants = int(num_infants_text)
+
+    travelers = {
+    "Adults": num_adults,
+    "Children": num_children,
+    "Infants": num_infants
+}
     if solo_match:
         travelers["Adults"] = 1
     elif duo_match:
@@ -223,7 +243,7 @@ def extract_details(text):
     details["Number of Travelers"] = travelers
     # Extract transportation preferences
     transport_modes = {
-        "flight": ["flight", "fly", "airplane", "aeroplane"],
+        "flight": ["flight", "fly", "airplane", "airlines","airline" ,"aeroplane"],
         "train": ["train", "railway"],
         "bus": ["bus", "coach"],
         "car": ["car", "auto", "automobile", "vehicle", "road trip", "drive"],
@@ -243,31 +263,16 @@ def extract_details(text):
     details["Transportation Preferences"] = transport_matches if transport_matches else "Any"
     
     # Extract budget range
-    budget_keywords = {
-        "friendly budget": "Mid range-Budget",
-        "mid-range budget": "Mid-range",
-        "luxury": "Luxury",
-        "cheap": "Low Budget",
-        "expensive": "Luxury",
-        "premium": "Luxury",
-        "high-range": "Luxury"
-    }
-    
-    budget_matches = []
-    for key, val in budget_keywords.items():
-        if re.search(r'\b' + re.escape(key) + r'\b', text, re.IGNORECASE):
-            budget_matches.append(val)
-    
-    if not budget_matches:
-        for key, val in budget_keywords.items():
-            if key.lower() in text.lower():
-                budget_matches.append(val)
-    
-    details["Budget Range"] = budget_matches[0] if budget_matches else "Mid-range"
+    # Extract budget details
+    budget_match = re.search(r'\b(?:budget|cost|price)\s*(?:of\s*)?\$?([\d,]+)(?:\s*(?:USD|dollars))?\b', text, re.IGNORECASE)
+    if budget_match:
+        details["Budget Range"] = f"${budget_match.group(1).replace(',', '')}"  # Remove commas for consistency
+
+ 
     
     # Extract trip type
     trip_type = {
-    "Adventure Travel": ["hiking", "skiing", "backpacking", "extreme sports"],
+    "Adventure Travel": ["surfing","cycling","Scuba diving","hiking","trekking","camping", "skiing","ski", "backpacking", "extreme sports"],
     "Ecotourism": ["wildlife watching", "nature walks", "eco-lodging"],
     "Cultural Tourism": ["museum visits", "historical site tours", "local festivals"],
     "Historical Tourism": ["castle tours", "archaeological site visits", "war memorial tours"],
@@ -301,7 +306,7 @@ def extract_details(text):
     accommodation_types = {
     "Boutique hotels": ["hotel", "boutique hotel", "small hotel", "intimate hotel"],
     "Resorts": ["resort", "holiday resort", "self-contained resort", "luxury resort"],
-    "Hostels": ["hostel", "dormitory", "shared accommodation"],
+    "Hostels": ["hostel","hostels", "dormitory", "shared accommodation"],
     "Bed and breakfasts": ["bed and breakfast", "B&B", "guesthouse"],
     "Motels": ["motel", "motor lodge", "roadside motel"],
     "Guesthouses": ["guesthouse", "private guesthouse", "pension"],
@@ -405,5 +410,3 @@ if st.button("Extract Details"):
     - Mention transportation and accommodation preferences
     - Add any special requirements or considerations
     """)
-    
-    
