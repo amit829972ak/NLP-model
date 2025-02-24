@@ -109,33 +109,25 @@ def extract_details(text):
             details["Trip Duration"] = f"{duration_days} days"
             
     # Extract dates
-    # 1. **Seasonal Date Extraction First** (To avoid overwriting valid parsed dates later)
-    
-    text_lower = text.lower()
-    
-    # Updated regex for date extraction
     date_range_match = re.search(
-        r'(?:(?P<start_day>\d{1,2})(?:st|nd|rd|th)?\s*(?P<month_1>[A-Za-z]+)|'
-        r'(?P<month_2>[A-Za-z]+)\s*(?P<start_day_alt>\d{1,2})(?:st|nd|rd|th)?)'
-        r'\s*(?:-|to|through)\s*'
-        r'(?:(?P<end_day>\d{1,2})(?:st|nd|rd|th)?\s*(?P<month_3>[A-Za-z]+)?|'
-        r'(?P<month_4>[A-Za-z]+)\s*(?P<end_day_alt>\d{1,2})(?:st|nd|rd|th)?)'
-        r'(?:,\s*(?P<year>\d{4}))?', text, re.IGNORECASE
+        r'(?P<month>[A-Za-z]+)?\s*(?P<start_day>\d{1,2})(?:st|nd|rd|th)?\s*(?:-|to|through)\s*'
+        r'(?P<end_day>\d{1,2})(?:st|nd|rd|th)?\s*(?P<end_month>[A-Za-z]+)?(?:,\s*(?P<year>\d{4}))?',
+        text, re.IGNORECASE
     )
-
+    dates=[]
     if date_range_match:
-        start_day = date_range_match.group("start_day") or date_range_match.group("start_day_alt")
-        end_day = date_range_match.group("end_day") or date_range_match.group("end_day_alt")
-        month = date_range_match.group("month_1") or date_range_match.group("month_2") or \
-                date_range_match.group("month_3") or date_range_match.group("month_4")
+        start_day = date_range_match.group("start_day")
+        start_month = date_range_match.group("month") or date_range_match.group("end_month")
+        end_day = date_range_match.group("end_day")
+        end_month = date_range_match.group("end_month") or start_month
         year = date_range_match.group("year") or str(datetime.today().year)
-
-        start_date_text = f"{month} {start_day}, {year}"
-        end_date_text = f"{month} {end_day}, {year}"
-
+        
+        start_date_text = f"{start_month} {start_day}, {year}"
+        end_date_text = f"{end_month} {end_day}, {year}"
+        
         start_date = dateparser.parse(start_date_text, settings={'PREFER_DATES_FROM': 'future'})
         end_date = dateparser.parse(end_date_text, settings={'PREFER_DATES_FROM': 'future'})
-
+        
         if start_date and end_date:
             details["Start Date"] = start_date.strftime('%Y-%m-%d')
             details["End Date"] = end_date.strftime('%Y-%m-%d')
@@ -143,7 +135,7 @@ def extract_details(text):
     else:
         extracted_dates = search_dates(text, settings={'PREFER_DATES_FROM': 'future'})
         dates = [d[1].strftime('%Y-%m-%d') for d in extracted_dates] if extracted_dates else []
-
+        
         if len(dates) > 1:
             details["Start Date"], details["End Date"] = dates[:2]
             start_date = datetime.strptime(details["Start Date"], "%Y-%m-%d")
@@ -151,8 +143,12 @@ def extract_details(text):
             details["Trip Duration"] = f"{(end_date - start_date).days} days"
         elif len(dates) == 1:
             details["Start Date"] = dates[0]
-
-    # Extract seasonal dates
+            if "duration_days" in locals():
+                start_date = datetime.strptime(dates[0], "%Y-%m-%d")
+                details["End Date"] = (start_date + timedelta(days=duration_days)).strftime('%Y-%m-%d')
+    
+    # 2. **Date Range Parsing with Improved Year Handling**
+    
     if seasonal_mappings:
         for season, start_month_day in seasonal_mappings.items():
             pattern = r'\b' + re.escape(season) + r'\b'
@@ -160,10 +156,9 @@ def extract_details(text):
                 today = datetime.today().year
                 start_date = f"{today}-{start_month_day}"
                 details["Start Date"] = start_date
-                if details["Trip Duration"]:
-                    details["End Date"] = (datetime.strptime(start_date, "%Y-%m-%d") + 
-                                            timedelta(days=int(details["Trip Duration"].split()[0]))).strftime('%Y-%m-%d')
-                break    
+                if "duration_days" in locals():
+                    details["End Date"] = (datetime.strptime(start_date, "%Y-%m-%d") + timedelta(days=duration_days)).strftime('%Y-%m-%d')
+                break   
     
     # Extract number of travelers
     travelers_match = re.search(r'(?P<adults>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:people|persons|adult|person|adults|man|men|woman|women|lady|ladies|climber|traveler)',text, re.IGNORECASE)
