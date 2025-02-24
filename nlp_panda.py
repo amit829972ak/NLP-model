@@ -7,6 +7,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from dateparser.search import search_dates
 import openai
+import json
 import subprocess
 import geonamescache
 from openai import OpenAI
@@ -284,7 +285,6 @@ def extract_details(text):
     }
     
     budget_matches = []
-    
     # Check for budget keywords in text
     for key, val in budget_keywords.items():
         if re.search(r'\b' + re.escape(key) + r'\b', text, re.IGNORECASE):
@@ -422,14 +422,16 @@ user_input = st.text_area("Enter your travel details in natural language:")
 if st.button("Extract Details"):
     if user_input:
         details = extract_details(user_input)
-        
+        details_json = extract_details(user_input)
         # Create a pandas DataFrame for table presentation
         details_df = pd.DataFrame(details.items(), columns=["Detail", "Value"])
         details_df.index = details_df.index + 1
         
         st.subheader("Extracted Travel Details")
         st.table(details_df)
-        
+        # Display JSON output
+        st.subheader("Extracted Travel Details (JSON)")
+        st.text(details_json)
         # Generate and display the itinerary prompt
         prompt = generate_prompt(details)
         st.subheader("Itinerary Request Prompt")
