@@ -60,7 +60,7 @@ def extract_details(text):
     }
     
     # Extract locations
-    locations = [ent.text for ent in doc.ents if ent.label_in {"GPE", "LOC"}]
+    locations = [ent.text for ent in doc.ents if ent.label_== "GPE"]
     
     # Regex backup to extract locations from text
     common_destinations = {"Goa","French countryside","goa","Maldives", "Bali", "Paris", "New York", "Los Angeles", "San Francisco", "Tokyo", "London", "Dubai", "Rome", "Bangkok"}
