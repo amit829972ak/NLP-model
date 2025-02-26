@@ -11,7 +11,6 @@ numpy==1.23.5
 watchdog
 word2number
 setuptools
-json
 wheel
 geonamescache
 spacy-lookups-data  # Required for some spaCy models
