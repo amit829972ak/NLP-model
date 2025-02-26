@@ -347,7 +347,7 @@ def extract_details(text):
 
     # Regex to detect budget amounts with currency
     budget_match = re.search(
-        r'\b(?:budget|cost| |amount|price)\s*(?:of\s*)?(?P<currency>\$|€|¥|₹|£)?\s*(?P<amount>[\d,]+)\s*(?P<currency_name>USD|dollars?|yen|JPY|euro|EUR|rupees?|INR|pounds?|GBP|CNY|yuan|RMB)?\b',
+        r'\b(?:budget|cost|amount|price)\s*(?:of\s*)?(?P<currency>\$|€|¥|₹|£)?\s*(?P<amount>[\d,]+)\s*(?P<currency_name>USD|dollars?|yen|JPY|euro|EUR|rupees?|INR|pounds?|GBP|CNY|yuan|RMB)?\b',
     text, re.IGNORECASE
 )
     # Currency name to symbol mapping (handling singular & plural)
