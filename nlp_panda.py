@@ -26,7 +26,7 @@ nlp = load_spacy_model()
 
 # Load city database from geonamescache
 gc = geonamescache.GeonamesCache()
-cities = {city["name"].lower(): city for city in gc.get_cities().values()}
+cities_dict = {city["name"].lower(): city["name"] for city in gc.get_cities().values()}
 
 # Define seasonal mappings
 seasonal_mappings = {
@@ -58,23 +58,19 @@ def extract_details(text):
         "Accommodation Preferences": None,
         "Special Requirements": None
     }
-    
     # Extract locations
-    locations = [ent.text for ent in doc.ents if ent.label_== "GPE"]
-    
-    # Regex backup to extract locations from text
-    common_destinations = {"Goa","French countryside","goa","Maldives", "Bali", "Paris", "New York", "Los Angeles", "San Francisco", "Tokyo", "London", "Dubai", "Rome", "Bangkok"}
+    locations = [ent.text for ent in doc.ents if ent.label_ in {"GPE", "LOC"}]    
+    common_destinations = {"goa","Goa","French countryside","goa","Maldives", "Bali", "Paris", "New York", "Los Angeles", "San Francisco", "Tokyo", "London", "Dubai", "Rome", "Bangkok"}
     # Backup regex-based location extraction
     regex_matches = re.findall(r'\b(?:from|to|visit|traveling to|heading to|going to|in|at|of|to the|toward the)\s+([A-Z][a-z]+(?:\s[A-Z][a-z]+)*)', text)
-    
     # Check for cities in text using geonamescache
     extracted_cities = []
     words = text.split()
     for i in range(len(words)):
-        for j in range(i + 1, min(i + 3, len(words))):  # Check up to 3-word phrases
+        for j in range(i + 1, min(i + 4, len(words))):  # Check up to 3-word phrases
             phrase = " ".join(words[i:j+1])
-            if phrase.lower() in cities or phrase in common_destinations:
-                extracted_cities.append(phrase)
+            if phrase.lower() in cities_dict or phrase in common_destinations:
+                extracted_cities.append(cities_dict[phrase.lower()])
 
     # Combine all sources and remove duplicates while preserving order
     seen = set()
@@ -82,22 +78,20 @@ def extract_details(text):
 
     # Determine starting location and destination using dependency parsing
     start_location, destination = None, None
-
     for token in doc:
-        if token.dep_ in {"prep", "agent", "mark"} and token.text.lower() in {"from"}:
-            next_token = token.nbor(1) if token.i + 1 < len(doc) else None
-            if next_token and next_token.ent_type_ in {"GPE", "LOC"}:
-                start_location = next_token.text
-        elif token.dep_ in {"prep", "agent", "mark"} and token.text.lower() in {"to", "toward"}:
-            next_token = token.nbor(1) if token.i + 1 < len(doc) else None
-            if next_token and (next_token.ent_type_ in {"GPE", "LOC"} or next_token.text in common_destinations):
-                destination = next_token.text
+        if token.text.lower() == "from":
+            location = " ".join(w.text for w in token.subtree if w.ent_type_ in {"GPE", "LOC"})
+            if location:
+                start_location = location
+        elif token.text.lower() in {"to", "toward"}:
+            location = " ".join(w.text for w in token.subtree if w.ent_type_ in {"GPE", "LOC"})
+            if location:
+                destination = location
 
     # If dependency parsing fails, use list extraction
     if not start_location and not destination:
         if len(all_locations) > 1:
-            start_location = all_locations[0]
-            destination = all_locations[1]
+            start_location, destination = all_locations[:2]
         elif len(all_locations) == 1:
             destination = all_locations[0]
 
@@ -107,6 +101,7 @@ def extract_details(text):
         details["Starting Location"] = start_location
     if destination:
         details["Destination"] = destination
+
     # Extract duration
     duration_match = re.search(r'(?P<value>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*[-]?\s*(?P<unit>day|days|night|nights|week|weeks|month|months)', text, re.IGNORECASE)
     duration_days = None
@@ -137,8 +132,7 @@ def extract_details(text):
             duration_days = 1
         
         if duration_days:
-            details["Trip Duration"] = f"{duration_days} days"
-            
+            details["Trip Duration"] = f"{duration_days} days"        
     # Extract dates
     text_lower = text.lower()
     
@@ -158,8 +152,8 @@ def extract_details(text):
         end_month = date_range_match.group("end_month") or start_month
         end_year = date_range_match.group("end_year") or start_year
         
-        start_date_text = f"{start_month} {start_day}, {start_year}"
-        end_date_text = f"{end_month} {end_day}, {end_year}"
+        start_date_text = f"{start_day} {start_month}, {start_year}"
+        end_date_text = f"{end_day} {end_month}, {end_year}"
         
         start_date = dateparser.parse(start_date_text, settings={'PREFER_DATES_FROM': 'future'})
         end_date = dateparser.parse(end_date_text, settings={'PREFER_DATES_FROM': 'future'})
@@ -197,8 +191,8 @@ def extract_details(text):
         end_month = date_range_match.group("end_month") or start_month
         end_year = date_range_match.group("end_year") or start_year
         
-        start_date_text = f"{start_month} {start_day}, {start_year}"
-        end_date_text = f"{end_month} {end_day}, {end_year}"
+        start_date_text = f"{start_day} {start_month}, {start_year}"
+        end_date_text = f"{end_day} {end_month}, {end_year}"
         
         start_date = dateparser.parse(start_date_text, settings={'PREFER_DATES_FROM': 'future'})
         end_date = dateparser.parse(end_date_text, settings={'PREFER_DATES_FROM': 'future'})
@@ -221,7 +215,37 @@ def extract_details(text):
             if "duration_days" in locals():
                 start_date = datetime.strptime(dates[0], "%Y-%m-%d")
                 details["End Date"] = (start_date + timedelta(days=duration_days)).strftime('%Y-%m-%d')
+    # Extract dates in the format 22/05/2025 or 23-06-2025
+    date_pattern = r'\b(\d{1,2}[/\-]\d{1,2}[/\-]\d{4})\b'
+    matched_dates = re.findall(date_pattern, text)
 
+    formatted_dates = []
+    for date_str in matched_dates:
+    # Normalize date format (replace "-" with "/")
+        date_str = date_str.replace("-", "/")
+
+    # Parse date while ensuring correct day/month order
+        parsed_date = dateparser.parse(date_str, settings={'DATE_ORDER': 'DMY'})
+    
+        if parsed_date:
+        # Standardize output format as DD/MM/YYYY
+           formatted_dates.append(parsed_date.strftime("%d/%m/%Y"))
+
+    if len(formatted_dates) >= 2:
+        details["Start Date"] = formatted_dates[0]
+        details["End Date"] = formatted_dates[1]
+
+    # Convert to datetime for correct duration calculation
+        start_date = datetime.strptime(details["Start Date"], "%d/%m/%Y")
+        end_date = datetime.strptime(details["End Date"], "%d/%m/%Y")
+
+    # Ensure trip duration is correct
+        trip_duration = (end_date - start_date).days
+        details["Trip Duration"] = f"{trip_duration} days" 
+
+    elif len(formatted_dates) == 1:
+        details["Start Date"] = formatted_dates[0]
+        
     if seasonal_mappings:
         for season, start_month_day in seasonal_mappings.items():
             pattern = r'\b' + re.escape(season) + r'\b'
@@ -232,6 +256,7 @@ def extract_details(text):
                 if "duration_days" in locals():
                     details["End Date"] = (datetime.strptime(start_date, "%Y-%m-%d") + timedelta(days=duration_days)).strftime('%Y-%m-%d')
                 break    
+    
     
     # Extract number of travelers
     travelers_match = re.search(r'(?P<adults>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:people|persons|adult|person|adults|man|men|woman|women|lady|ladies|climber|traveler)',text, re.IGNORECASE)
@@ -305,36 +330,47 @@ def extract_details(text):
     # Extract budget details
     # Budget classification keywords
     budget_keywords = {
-        "friendly budget": "Mid-range Budget",
-        "mid-range budget": "Mid-range",
-        "luxury": "Luxury",
-        "cheap": "Low Budget",
-        "expensive": "Luxury",
-        "premium": "Luxury",
-        "high-range": "Luxury"
-    }
-    
+    "friendly budget": "Mid-range Budget",
+    "mid-range budget": "Mid-range",
+    "luxury": "Luxury",
+    "cheap": "Low Budget",
+    "expensive": "Luxury",
+    "premium": "Luxury",
+    "high-range": "Luxury"
+}
+
     budget_matches = []
     # Check for budget keywords in text
     for key, val in budget_keywords.items():
         if re.search(r'\b' + re.escape(key) + r'\b', text, re.IGNORECASE):
             budget_matches.append(val)
-    
-    # Fallback: If keyword matching fails, check for direct text match
-    if not budget_matches:
-        for key, val in budget_keywords.items():
-            if key.lower() in text.lower():
-                budget_matches.append(val)
-    
-    # Default budget classification if nothing is found
-    details["Budget Range"] = budget_matches[0] if budget_matches else "Mid-range"
 
-    # Budget amount extraction (prioritized over keyword classification)
-    budget_match = re.search(r'\b(?:budget|cost|price)\s*(?:of\s*)?\$?([\d,]+)(?:\s*(?:USD|dollars))?\b', text, re.IGNORECASE)
+    # Regex to detect budget amounts with currency
+    budget_match = re.search(
+        r'\b(?:budget|cost| |amount|price)\s*(?:of\s*)?(?P<currency>\$|€|¥|₹|£)?\s*(?P<amount>[\d,]+)\s*(?P<currency_name>USD|dollars?|yen|JPY|euro|EUR|rupees?|INR|pounds?|GBP|CNY|yuan|RMB)?\b',
+    text, re.IGNORECASE
+)
+    # Currency name to symbol mapping (handling singular & plural)
+    currency_symbols = {
+    "USD": "$", "dollar": "$", "dollars": "$",
+    "EUR": "€", "euro": "€",
+    "JPY": "¥", "yen": "¥",
+    "INR": "₹", "rupee": "₹", "rupees": "₹",
+    "GBP": "£", "pound": "£", "pounds": "£",
+    "CNY": "¥", "yuan": "¥", "RMB": "¥"
+}
+# Process budget amount and currency
     if budget_match:
-        details["Budget Range"] = f"${budget_match.group(1).replace(',', '')}"  # Remove commas for consistency
-
- 
+        currency_symbol = budget_match.group("currency") or ""
+        amount = budget_match.group("amount").replace(",", "")  # Normalize number format
+        currency_name = budget_match.group("currency_name") or ""
+    # Use detected symbol or mapped currency name
+        detected_symbol = currency_symbol or currency_symbols.get(currency_name.lower(), "")
+        budget_value = f"{detected_symbol}{amount} ({currency_name if currency_name else 'Unknown Currency'})"
+    else:
+        budget_value = budget_matches[0] if budget_matches else "Unknown"
+    # Assign to details dictionary
+    details["Budget Range"] = budget_value
     
     # Extract trip type
     trip_type = {
@@ -365,9 +401,7 @@ def extract_details(text):
                break
     
     details["Trip Type"] = trip_type_matches if trip_type_matches else "Leisure"
-    
-    
-    
+       
     # Extract accommodation preferences
     accommodation_types = {
     "Boutique hotels": ["hotel", "boutique hotel", "small hotel", "intimate hotel"],
@@ -398,12 +432,54 @@ def extract_details(text):
 
 # Prompt Generation Agent
 def generate_prompt(details):
-    budget_range = details.get("Budget Range", "").strip()
-    if not budget_range:
-        return "❗ Please specify your budget as a range (e.g., 1000-2000)." 
+    #destination_place
+    destination = details.get("Destination", "").strip()    
+    if not destination:
+        return "Error❗Error❗Error❗ Please specify a Destination place."
     
+    #start_dates
+    start_date = details.get("Start Date", "").strip()
+    if not start_date:
+           return "Error❗Error❗Error❗ Please specify a Start Date."
+    try:
+        start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+    except ValueError:
+           return "Error❗Error❗Error❗ Invalid date format. Please provide Start Date in YYYY-MM-DD format."
+    today = datetime.today().date()
+    if start_date < today:
+        return "Error❗Error❗Error❗ssss Enter a correct Start Date. It must be a future date."
+    
+    # Trip Duration (including negative ones)
     prompt = f"Generate a detailed itinerary for a {details.get('Trip Type', 'general')} trip to {details.get('Destination', 'an unknown destination')} for {details['Number of Travelers'].get('Adults', '1')} adult"
-
+    trip_duration = details.get("Trip Duration", "").strip()
+    match = re.search(r"-?\d+", trip_duration)  
+    if match:
+        duration_value = int(match.group())
+        if duration_value <= 0:
+            return "Error❗Error❗Error❗ Enter the correct dates."
+    #start_dates
+    start_date = details.get("Start Date", "").strip()
+    if not start_date:
+           return "Error❗Error❗Error❗ Please specify a Start Date."
+    try:
+        start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+    except ValueError:
+           return "Error❗Error❗Error❗ Invalid date format. Please provide Start Date in YYYY-MM-DD format."
+    today = datetime.today().date()
+    if start_date < today:
+        return "Error❗Error❗Error❗ Enter a correct Start Date. It must be a future date."    
+    #Budget_range   
+    budget_range = details.get("Budget Range", "").strip()
+    match = re.search(r"\d+", budget_range)
+    if not match:
+        return "Error❗Error❗Error❗ Please specify your budget as a range (e.g., 1000-2000)." 
+    #number_of_travelers
+    number_of_travelers = details.get("Number of Travelers", "")
+    adults = number_of_travelers.get("Adults", 0)
+    children = number_of_travelers.get("Children", 0) 
+    if adults == 0 and children == 0:
+        return "Error❗Error❗Error❗ At least one adult or a child should be there for the trip."
+    
     # Pluralize 'adults' correctly
     if details['Number of Travelers'].get('Adults', '1') != "1":
         prompt += "s"
@@ -451,22 +527,29 @@ user_input = st.text_area("Enter your travel details in natural language:")
 
 if st.button("Extract Details"):
     if user_input:
-        details = extract_details(user_input)
-        details_json = extract_details(user_input)
+        details = extract_details(user_input)  # Extract details once
+        
         # Create a pandas DataFrame for table presentation
         details_df = pd.DataFrame(details.items(), columns=["Detail", "Value"])
         details_df.index = details_df.index + 1
         
         st.subheader("Extracted Travel Details")
         st.table(details_df)
-        # Display JSON output
-        st.subheader("Extracted Travel Details (JSON)")
-        st.text(details_json)
+
         # Generate and display the itinerary prompt
         prompt = generate_prompt(details)
         st.subheader("Itinerary Request Prompt")
         st.write(prompt)
-        
+
+        # Display JSON output
+        error_messages = ["Error❗Error❗Error❗", "Failed to generate", "Invalid input"]  # Add more error patterns if needed
+        if not any(error in prompt for error in error_messages):  
+            details_json = json.dumps(details, indent=4)  
+            st.subheader("Extracted Travel Details (JSON)")
+            st.json(details_json)  # Display JSON output
+        else:
+            st.warning("An error occurred in itinerary generation. JSON details will not be generated.")
+
     else:
         st.warning("Please enter some text to extract details.")
      # Footer
