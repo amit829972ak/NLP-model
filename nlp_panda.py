@@ -4,14 +4,14 @@ import dateparser
 import re
 import requests
 import pandas as pd
-from dateparser import parse
 from datetime import datetime, timedelta
 from dateparser.search import search_dates
 import json
-import subprocess
 import geonamescache
+from openai import OpenAI
 from word2number import w2n
 import google.generativeai as genai
+
 # Configure the Gemini API with your API key
 def setup_gemini():
     GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]  # Store your API key in Streamlit secrets
@@ -26,6 +26,7 @@ def generate_itinerary_with_gemini(prompt):
         return response.text
     except Exception as e:
         return f"Error generating itinerary: {str(e)}"
+
 # Load spaCy model globally
 @st.cache_resource
 def load_spacy_model():
@@ -152,7 +153,7 @@ def extract_details(text):
     # Enhanced regex for extracting date ranges in multiple formats
     
     date_range_match = re.search(
-        r'(?P<start_day>\d{1,2})(?:st|nd|rd|th)?\s*(?P<start_month>[A-Za-z]+)?,?\s*(?P<start_year>\d{4})?\s*(?:-|to|through)\s*'
+        r'(?P<start_day>\d{1,2})(?:st|nd|rd|th)?\s*(?P<start_month>[A-Za-z]+)?,?\s*(?P<start_year>\d{4})?\s*(?:-|from|on|to|through)\s*'
         r'(?P<end_day>\d{1,2})(?:st|nd|rd|th)?\s*(?P<end_month>[A-Za-z]+)?,?\s*(?P<end_year>\d{4})?',
         text, re.IGNORECASE
     )
@@ -191,7 +192,7 @@ def extract_details(text):
                 details["End Date"] = (start_date + timedelta(days=duration_days)).strftime('%Y-%m-%d')
     
     date_range_match = re.search(
-        r'(?P<start_month>[A-Za-z]+)?\s*(?P<start_day>\d{1,2})(?:st|nd|rd|th)?(?:,\s*)?(?P<start_year>\d{4})?\s*(?:-|to|through)\s*'
+        r'(?P<start_month>[A-Za-z]+)?\s*(?P<start_day>\d{1,2})(?:st|nd|rd|th)?(?:,\s*)?(?P<start_year>\d{4})?\s*(?:-|to|on|from|through)\s*'
         r'(?P<end_month>[A-Za-z]+)?\s*(?P<end_day>\d{1,2})(?:st|nd|rd|th)?(?:,\s*)?(?P<end_year>\d{4})?',
         text, re.IGNORECASE
     )
@@ -229,55 +230,73 @@ def extract_details(text):
                 start_date = datetime.strptime(dates[0], "%Y-%m-%d")
                 details["End Date"] = (start_date + timedelta(days=duration_days)).strftime('%Y-%m-%d')
     # Extract dates in the format 22/05/2025 or 23-06-2025
-    date_pattern = r'\b(\d{1,2}[/\-]\d{1,2}[/\-]\d{4})\b'
-    matched_dates = re.findall(date_pattern, text)
-
-    formatted_dates = []
-    for date_str in matched_dates:
-    # Normalize date format (replace "-" with "/")
-        date_str = date_str.replace("-", "/")
-
-    # Parse date while ensuring correct day/month order
-        parsed_date = dateparser.parse(date_str, settings={'DATE_ORDER': 'DMY'})
-    
-        if parsed_date:
-        # Standardize output format as DD/MM/YYYY
-           formatted_dates.append(parsed_date.strftime("%d/%m/%Y"))
-
-    if len(formatted_dates) >= 2:
-        details["Start Date"] = formatted_dates[0]
-        details["End Date"] = formatted_dates[1]
-
-    # Convert to datetime for correct duration calculation
-        start_date = datetime.strptime(details["Start Date"], "%d/%m/%Y")
-        end_date = datetime.strptime(details["End Date"], "%d/%m/%Y")
-
-    # Ensure trip duration is correct
-        trip_duration = (end_date - start_date).days
-        details["Trip Duration"] = f"{trip_duration} days" 
-
-    elif len(formatted_dates) == 1:
-        details["Start Date"] = formatted_dates[0]
+    if not details.get("Start Date"):
+        date_pattern = r'\b(\d{1,2}[/\-]\d{1,2}[/\-]\d{4})\b'
+        matched_dates = re.findall(date_pattern, text)
         
-    if seasonal_mappings:
+        formatted_dates = []
+        for date_str in matched_dates:
+            # Normalize date format (replace "-" with "/")
+            date_str = date_str.replace("-", "/")
+            
+            # Parse date while ensuring correct day/month order
+            parsed_date = dateparser.parse(date_str, settings={'DATE_ORDER': 'DMY'})
+            
+            if parsed_date:
+                # Standardize output format
+                formatted_dates.append(parsed_date.strftime("%Y-%m-%d"))
+        
+        if len(formatted_dates) >= 2:
+            details["Start Date"] = formatted_dates[0]
+            details["End Date"] = formatted_dates[1]
+            
+            # Calculate trip duration
+            start_date = datetime.strptime(details["Start Date"], "%Y-%m-%d")
+            end_date = datetime.strptime(details["End Date"], "%Y-%m-%d")
+            details["Trip Duration"] = f"{(end_date - start_date).days } days"
+            
+        elif len(formatted_dates) == 1:
+            details["Start Date"] = formatted_dates[0]
+            
+            # If we have duration_days, calculate end date
+            if duration_days:
+                start_date = datetime.strptime(formatted_dates[0], "%Y-%m-%d")
+                details["End Date"] = (start_date + timedelta(days=duration_days - 1)).strftime('%Y-%m-%d')
+    
+    # If no dates found, try dateparser.search
+    if not details.get("Start Date"):
+        extracted_dates = search_dates(text, settings={'PREFER_DATES_FROM': 'future'})
+        dates = [d[1].strftime('%Y-%m-%d') for d in extracted_dates] if extracted_dates else []
+        
+        if len(dates) > 1:
+            details["Start Date"], details["End Date"] = dates[0], dates[1]
+            start_date = datetime.strptime(details["Start Date"], "%Y-%m-%d")
+            end_date = datetime.strptime(details["End Date"], "%Y-%m-%d")
+            details["Trip Duration"] = f"{(end_date - start_date).days } days"
+        elif len(dates) == 1:
+            details["Start Date"] = dates[0]
+            if duration_days:
+                start_date = datetime.strptime(dates[0], "%Y-%m-%d")
+                details["End Date"] = (start_date + timedelta(days=duration_days - 1)).strftime('%Y-%m-%d')
+                details["Trip Duration"] = f"{duration_days} days"
+    # Check for seasonal references
+    if not details.get("Start Date"):
         for season, start_month_day in seasonal_mappings.items():
             pattern = r'\b' + re.escape(season) + r'\b'
             if re.search(pattern, text_lower, re.IGNORECASE):
-                current_year = datetime.today().year
-                start_date = datetime.strptime(f"{current_year}-{start_month_day}", "%Y-%m-%d")            
-            # Ensure the start date is in the future
-                if start_date < datetime.today():
-                    start_date = start_date.replace(year=current_year + 1)
-                details["Start Date"] = start_date.strftime("%Y-%m-%d")
+                today = datetime.today().year
+                start_date = f"{today}-{start_month_day}"
+                details["Start Date"] = start_date
                 if duration_days:
-                    details["End Date"] = (start_date + timedelta(days=duration_days)).strftime("%Y-%m-%d")
-                break    
+                    details["End Date"] = (datetime.strptime(start_date, "%Y-%m-%d") + timedelta(days=duration_days - 1)).strftime('%Y-%m-%d')
+                break
+    
     # Extract number of travelers
     travelers_match = re.search(r'(?P<adults>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:people|persons|adult|person|adults|man|men|woman|women|lady|ladies|climber|traveler)',text, re.IGNORECASE)
     children_match = re.search(r'(?P<children>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:child|children)', text, re.IGNORECASE)
     infants_match = re.search(r'(?P<infants>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:infant|infants)', text, re.IGNORECASE)
 
-    solo_match = re.search(r'\b(?:solo|alone|me)\b', text, re.IGNORECASE)
+    solo_match = re.search(r'\b(?:solo|alone|I|me)\b', text, re.IGNORECASE)
     duo_match = re.search(r'\b(?:duo|honeymoon|couple|pair|my partner and I|my wife and I|my husband and I)\b', text, re.IGNORECASE)
     trio_match = re.search(r'\btrio\b', text, re.IGNORECASE)
     group_match = re.search(r'family of (\d+)|group of (\d+)', text, re.IGNORECASE)
@@ -361,7 +380,7 @@ def extract_details(text):
 
     # Regex to detect budget amounts with currency
     budget_match = re.search(
-        r'\b(?:budget|cost|amount|price)\s*(?:of\s*)?(?P<currency>\$|€|¥|₹|£)?\s*(?P<amount>[\d,]+)\s*(?P<currency_name>USD|dollars?|yen|JPY|euro|EUR|rupees?|INR|pounds?|GBP|CNY|yuan|RMB)?\b',
+        r'\b(?:budget|cost|expense|spending cap|cost limit|amount|price)\s*(?:of\s*)?(?P<currency>\$|€|¥|₹|£)?\s*(?P<amount>[\d,]+)\s*(?P<currency_name>USD|dollars?|yen|JPY|euro|EUR|rupees?|INR|pounds?|GBP|CNY|yuan|RMB)?\b',
     text, re.IGNORECASE
 )
     # Currency name to symbol mapping (handling singular & plural)
@@ -452,17 +471,28 @@ def generate_prompt(details):
         return "Error❗Error❗Error❗ Please specify a Destination place."
     
     #start_dates
-    start_date = details.get("Start Date", "").strip()
-    if not start_date:
+    start_date_str = details.get("Start Date", "").strip()
+    if not start_date_str:
            return "Error❗Error❗Error❗ Please specify a Start Date."
-    try:
-        start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
-    except ValueError:
-           return "Error❗Error❗Error❗ Invalid date format. Please provide Start Date in YYYY-MM-DD format."
+        
+    valid_formats = ["%Y-%m-%d", "%d-%m-%Y"]
+    
+    start_date = None
+    for fmt in valid_formats:
+        try:
+               start_date = datetime.strptime(start_date_str, fmt).date()
+               break  # Exit loop if parsing succeeds
+        except ValueError:
+            continue  # Try next format
+    
+    if start_date is None:  # If no valid format matched
+        return "Error❗Error❗Error❗ Invalid Start Date. Please enter a valid date."
+
     today = datetime.today().date()
     if start_date < today:
-        return "Error❗Error❗Error❗ssss Enter a correct Start Date. It must be a future date."
+        return "Error❗Error❗Error❗ Start Date should not be in the past."
     
+            
     # Trip Duration (including negative ones)
     prompt = f"Generate a detailed itinerary for a {details.get('Trip Type', 'general')} trip to {details.get('Destination', 'an unknown destination')} for {details['Number of Travelers'].get('Adults', '1')} adult"
     trip_duration = details.get("Trip Duration", "").strip()
@@ -471,17 +501,7 @@ def generate_prompt(details):
         duration_value = int(match.group())
         if duration_value <= 0:
             return "Error❗Error❗Error❗ Enter the correct dates."
-    #start_dates
-    start_date = details.get("Start Date", "").strip()
-    if not start_date:
-           return "Error❗Error❗Error❗ Please specify a Start Date."
-    try:
-        start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
-    except ValueError:
-           return "Error❗Error❗Error❗ Invalid date format. Please provide Start Date in YYYY-MM-DD format."
-    today = datetime.today().date()
-    if start_date < today:
-        return "Error❗Error❗Error❗ Enter a correct Start Date. It must be a future date."    
+        
     #Budget_range   
     budget_range = details.get("Budget Range", "").strip()
     match = re.search(r"\d+", budget_range)
@@ -533,16 +553,13 @@ def generate_prompt(details):
         prompt += f" Special requirements: {details['Special Requirements']}."
     
     return prompt
-# Set page configuration
-st.set_page_config(
-    page_title="Travel Buddy",
-    page_icon="✈️",
-    layout="wide"
-)
-st.title("✈️ Travel Buddy")
+
+
+st.title("Travel Plan Extractor")
+
 user_input = st.text_area("Enter your travel details:")
 
-if st.button("Extract Details", type="primary"):
+if st.button("Plan my Trip", type='primary'):
     if user_input:
         details = extract_details(user_input)  # Extract details once
         
@@ -560,7 +577,11 @@ if st.button("Extract Details", type="primary"):
 
         # Display JSON output
         error_messages = ["Error❗Error❗Error❗", "Failed to generate", "Invalid input"]  # Add more error patterns if needed
-        if not any(error in prompt for error in error_messages):  
+        if not any(error in prompt for error in error_messages):
+            with st.spinner("Generating detailed itinerary with Google Gemini..."):
+                itinerary = generate_itinerary_with_gemini(prompt)  
+            st.subheader("Your Personalized Itinerary (Powered by Google Gemini)")
+            st.markdown(itinerary) 
             details_json = json.dumps(details, indent=4)  
             st.subheader("Extracted Travel Details (JSON)")
             st.json(details_json)  # Display JSON output
@@ -578,5 +599,3 @@ if st.button("Extract Details", type="primary"):
     - Mention transportation and accommodation preferences
     - Add any special requirements or considerations
     """)
-    
-    
