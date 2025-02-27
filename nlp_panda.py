@@ -531,12 +531,10 @@ def generate_prompt(details):
     elif "Starting Location" in details:
         prompt += f", starting from {details['Starting Location']}"
     elif "Start Date" in details:
-        prompt += f", departing on {details['Start Date']}"
-    
+        prompt += f", departing on {details['Start Date']}" 
     # End date
     if details.get("End Date"):
-        prompt += f". The trip ends on {details['End Date']}."
-    
+        prompt += f". The trip ends on {details['End Date']}." 
     # Budget and general recommendations
     prompt += f" Please consider a {details.get('Budget Range', 'moderate')} budget and provide accommodation, dining, and activity recommendations."
     
