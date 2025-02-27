@@ -9,8 +9,7 @@ timedelta
 datetime
 numpy==1.23.5
 watchdog
-genai
-generativeai
+google-generativeai
 word2number
 setuptools
 wheel
