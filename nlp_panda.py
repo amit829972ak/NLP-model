@@ -541,7 +541,7 @@ st.set_page_config(
 st.title("✈️ Travel Buddy")
 user_input = st.text_area("Enter your travel details:")
 
-if st.button("Extract Details"):
+if st.button("Extract Details", type="primary"):
     if user_input:
         details = extract_details(user_input)  # Extract details once
         
