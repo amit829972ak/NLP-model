@@ -74,7 +74,7 @@ def extract_details(text):
     }
     # Extract locations
     locations = [ent.text for ent in doc.ents if ent.label_ in {"GPE", "LOC"}]    
-    common_destinations = {"goa","Goa","French countryside","goa","Maldives", "Bali", "Paris", "New York", "Los Angeles", "San Francisco", "Tokyo", "London", "Dubai", "Rome", "Bangkok"}
+    common_destinations = {"goa","Goa","French countryside","maldives","Maldives", "Bali", "Paris", "New York", "Los Angeles", "San Francisco", "Tokyo", "London", "Dubai", "Rome", "Bangkok"}
     # Backup regex-based location extraction
     regex_matches = re.findall(r'\b(?:from|to|visit|traveling to|heading to|going to|in|at|of|to the|toward the)\s+([A-Z][a-z]+(?:\s[A-Z][a-z]+)*)', text)
     # Check for cities in text using geonamescache
