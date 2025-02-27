@@ -9,7 +9,6 @@ from dateparser.search import search_dates
 import json
 import subprocess
 import geonamescache
-from openai import OpenAI
 from word2number import w2n
 import google.generativeai as genai
 # Configure the Gemini API with your API key
