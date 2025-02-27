@@ -10,6 +10,7 @@ datetime
 numpy==1.23.5
 watchdog
 genai
+generativeai
 word2number
 setuptools
 wheel
