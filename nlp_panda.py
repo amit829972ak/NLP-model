@@ -6,13 +6,26 @@ import requests
 import pandas as pd
 from datetime import datetime, timedelta
 from dateparser.search import search_dates
-import openai
 import json
 import subprocess
 import geonamescache
 from openai import OpenAI
 from word2number import w2n
+import google.generativeai as genai
+# Configure the Gemini API with your API key
+def setup_gemini():
+    GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]  # Store your API key in Streamlit secrets
+    genai.configure(api_key=GOOGLE_API_KEY)
+    return genai.GenerativeModel('gemini-1.5-pro')  # Choose the appropriate model
 
+# Function to generate itinerary using Gemini
+def generate_itinerary_with_gemini(prompt):
+    model = setup_gemini()
+    try:
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"Error generating itinerary: {str(e
 # Load spaCy model globally
 @st.cache_resource
 def load_spacy_model():
@@ -250,14 +263,15 @@ def extract_details(text):
         for season, start_month_day in seasonal_mappings.items():
             pattern = r'\b' + re.escape(season) + r'\b'
             if re.search(pattern, text_lower, re.IGNORECASE):
-                today = datetime.today().year
-                start_date = f"{today}-{start_month_day}"
-                details["Start Date"] = start_date
-                if "duration_days" in locals():
-                    details["End Date"] = (datetime.strptime(start_date, "%Y-%m-%d") + timedelta(days=duration_days)).strftime('%Y-%m-%d')
+                current_year = datetime.today().year
+                start_date = datetime.strptime(f"{current_year}-{start_month_day}", "%Y-%m-%d")            
+            # Ensure the start date is in the future
+                if start_date < datetime.today():
+                    start_date = start_date.replace(year=current_year + 1)
+                details["Start Date"] = start_date.strftime("%Y-%m-%d")
+                if duration_days:
+                    details["End Date"] = (start_date + timedelta(days=duration_days)).strftime("%Y-%m-%d")
                 break    
-    
-    
     # Extract number of travelers
     travelers_match = re.search(r'(?P<adults>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:people|persons|adult|person|adults|man|men|woman|women|lady|ladies|climber|traveler)',text, re.IGNORECASE)
     children_match = re.search(r'(?P<children>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:child|children)', text, re.IGNORECASE)
@@ -519,11 +533,14 @@ def generate_prompt(details):
         prompt += f" Special requirements: {details['Special Requirements']}."
     
     return prompt
-
-
-st.title("Travel Plan Extractor")
-
-user_input = st.text_area("Enter your travel details in natural language:")
+# Set page configuration
+st.set_page_config(
+    page_title="Travel Buddy",
+    page_icon="✈️",
+    layout="wide"
+)
+st.title("✈️ Travel Buddy")
+user_input = st.text_area("Enter your travel details:")
 
 if st.button("Extract Details"):
     if user_input:
