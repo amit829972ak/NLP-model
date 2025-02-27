@@ -25,7 +25,7 @@ def generate_itinerary_with_gemini(prompt):
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
-        return f"Error generating itinerary: {str(e
+        return f"Error generating itinerary: {str(e)}"
 # Load spaCy model globally
 @st.cache_resource
 def load_spacy_model():
