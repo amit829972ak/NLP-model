@@ -4,6 +4,7 @@ import dateparser
 import re
 import requests
 import pandas as pd
+from dateparser import parse
 from datetime import datetime, timedelta
 from dateparser.search import search_dates
 import json
