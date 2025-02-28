@@ -553,7 +553,7 @@ def generate_prompt(details):
     return prompt
 
 
-st.title("Travel Plan Extractor")
+st.title("Tripease")
 
 user_input = st.text_area("Enter your travel details:")
 
