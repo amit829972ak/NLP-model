@@ -698,7 +698,7 @@ def generate_prompt(details):
     
     return prompt
 
-st.title("Tripease✈️ ")
+st.title("Travel Plan Extractor")
 user_input = st.text_area("Enter your travel details:")
 if st.button("Plan my Trip", type='primary'):
     if user_input:
@@ -728,12 +728,12 @@ if st.button("Plan my Trip", type='primary'):
             st.warning("An error occurred in itinerary generation. JSON details will not be generated.")
     else:
         st.warning("Please enter some text to extract details.")
-    
-st.markdown("---")
-st.markdown("### 💡 Tips")
-st.markdown("""
-- Be specific about dates, locations, and number of travelers
-- Include budget information if available
-- Mention transportation and accommodation preferences
-- Add any special requirements or considerations
+     # Footer
+    st.markdown("---")
+    st.markdown("### 💡 Tips")
+    st.markdown("""
+    - Be specific about dates, locations, and number of travelers
+    - Include budget information if available
+    - Mention transportation and accommodation preferences
+    - Add any special requirements or considerations
     """)
