@@ -13,7 +13,7 @@ import google.generativeai as genai
 
 # Configure the Gemini API with your API key
 def setup_gemini():
-    GOOGLE_API_KEY = st.secrets["AIzaSyANGQi6M9lLPjsGVytwKZtiByTiTE26sQ8"]  # Store your API key in Streamlit secrets
+    GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]  # Store your API key in Streamlit secrets
     genai.configure(api_key=GOOGLE_API_KEY)
     return genai.GenerativeModel('gemini-1.5-pro')  # Choose the appropriate model
 
