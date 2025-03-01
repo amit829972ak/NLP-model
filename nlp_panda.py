@@ -2,7 +2,6 @@ import streamlit as st
 import spacy
 import dateparser
 import re
-import requests
 import pandas as pd
 from datetime import datetime, timedelta
 from dateparser.search import search_dates
@@ -74,7 +73,7 @@ def extract_details(text):
     }
     # Extract locations
     locations = [ent.text for ent in doc.ents if ent.label_ in {"GPE", "LOC"}]    
-    common_destinations = {"goa","Goa","French countryside","maldives","Maldives", "Bali", "Paris", "New York", "Los Angeles", "San Francisco", "Tokyo", "London", "Dubai", "Rome", "Bangkok"}
+    common_destinations = {"goa","Goa","French countryside","goa","Maldives", "Bali", "Paris", "New York", "Los Angeles", "San Francisco", "Tokyo", "London", "Dubai", "Rome", "Bangkok"}
     # Backup regex-based location extraction
     regex_matches = re.findall(r'\b(?:from|to|visit|traveling to|heading to|going to|in|at|of|to the|toward the)\s+([A-Z][a-z]+(?:\s[A-Z][a-z]+)*)', text)
     # Check for cities in text using geonamescache
@@ -147,27 +146,84 @@ def extract_details(text):
         
         if duration_days:
             details["Trip Duration"] = f"{duration_days} days"        
+    
     # Extract dates
     text_lower = text.lower()
     
-    # Enhanced regex for extracting date ranges in multiple formats
+    # NEW PATTERN: Handle date ranges with format "5-12th june"
+    text_lower = text.lower()
     
-    date_range_match = re.search(
-        r'(?P<start_day>\d{1,2})(?:st|nd|rd|th)?\s*(?P<start_month>[A-Za-z]+)?,?\s*(?P<start_year>\d{4})?\s*(?:-|from|on|to|through)\s*'
-        r'(?P<end_day>\d{1,2})(?:st|nd|rd|th)?\s*(?P<end_month>[A-Za-z]+)?,?\s*(?P<end_year>\d{4})?',
-        text, re.IGNORECASE
-    )
-    if date_range_match:
-        start_day = date_range_match.group("start_day")
-        start_month = date_range_match.group("start_month") or date_range_match.group("end_month")
-        start_year = date_range_match.group("start_year") or date_range_match.group("end_year") or str(datetime.today().year)
+    # Create patterns for different date formats
+    
+    # Pattern 1: Handle date ranges with format "from 3-13th april 2025"
+    date_range_ordinal_pattern = r'from\s+(\d{1,2})(?:st|nd|rd|th)?-(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?'
+    ordinal_match = re.search(date_range_ordinal_pattern, text, re.IGNORECASE)
+    
+    # Pattern 2: Handle formats like "from 22th june 2025 to 29th june 2025"
+    date_to_date_pattern = r'from\s+(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?\s+to\s+(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?'
+    to_date_match = re.search(date_to_date_pattern, text, re.IGNORECASE)
+    
+    # Pattern 3: Handle formats like "from 02-04-2025 to 29-04-2025"
+    numeric_date_pattern = r'from\s+(\d{1,2})-(\d{1,2})-(\d{4})\s+to\s+(\d{1,2})-(\d{1,2})-(\d{4})'
+    numeric_match = re.search(numeric_date_pattern, text, re.IGNORECASE)
+    
+    # Pattern 4: Handle formats like "from 12th march for two week"
+    date_for_duration_pattern = r'from\s+(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?\s+for\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(day|days|week|weeks|month|months)'
+    date_for_duration_match = re.search(date_for_duration_pattern, text, re.IGNORECASE)
+    
+    # Pattern 5: Handle formats like "for a week from 13th april"
+    duration_from_date_pattern = r'for\s+(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten)\s+(day|days|week|weeks|month|months)\s+from\s+(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?'
+    duration_from_date_match = re.search(duration_from_date_pattern, text, re.IGNORECASE)
+    
+    # Pattern 6: Handle formats like "for two weeks on 3rd april"
+    duration_on_date_pattern = r'for\s+(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten)\s+(day|days|week|weeks|month|months)\s+on\s+(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?'
+    duration_on_date_match = re.search(duration_on_date_pattern, text, re.IGNORECASE)
+    
+    # Pattern 7: Handle formats like "on 13th march for a week"
+    on_date_for_duration_pattern = r'on\s+(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?\s+for\s+(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten)\s+(day|days|week|weeks|month|months)'
+    on_date_for_duration_match = re.search(on_date_for_duration_pattern, text, re.IGNORECASE)
+    
+    # Pattern 8: Handle formats like "for 2 weeks on 20/05/2025" or "for two weeks on 02-08-2025"
+    duration_on_numeric_date_pattern = r'for\s+(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten)\s+(day|days|week|weeks|month|months)\s+on\s+(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})'
+    duration_on_numeric_date_match = re.search(duration_on_numeric_date_pattern, text, re.IGNORECASE)
+    
+    # Pattern 9: Handle formats like "on 05/06/2025 for two weeks" or "on 06-07-2025 for 2 weeks"
+    on_numeric_date_for_duration_pattern = r'on\s+(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})\s+for\s+(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten)\s+(day|days|week|weeks|month|months)'
+    on_numeric_date_for_duration_match = re.search(on_numeric_date_for_duration_pattern, text, re.IGNORECASE)
+    
+    # Function to convert text numbers to integers
+    def convert_text_to_number(text_num):
+        if text_num.lower() in ['a', 'an']:
+            return 1
+        try:
+            return int(text_num)
+        except ValueError:
+            # Convert word numbers to digits
+            word_to_num = {
+                'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+                'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
+            }
+            return word_to_num.get(text_num.lower(), 1)
+    
+    # Function to convert unit to days
+    def convert_unit_to_days(num, unit):
+        if 'week' in unit:
+            return num * 7
+        elif 'month' in unit:
+            return num * 30
+        else:  # days
+            return num
+    
+    # Process the matched patterns
+    if ordinal_match:
+        # Handle format "from 3-13th april 2025"
+        start_day = ordinal_match.group(1)
+        end_day = ordinal_match.group(2)
+        month = ordinal_match.group(3)
+        year = ordinal_match.group(4) or datetime.today().year
         
-        end_day = date_range_match.group("end_day")
-        end_month = date_range_match.group("end_month") or start_month
-        end_year = date_range_match.group("end_year") or start_year
-        
-        start_date_text = f"{start_day} {start_month}, {start_year}"
-        end_date_text = f"{end_day} {end_month}, {end_year}"
+        start_date_text = f"{start_day} {month} {year}"
+        end_date_text = f"{end_day} {month} {year}"
         
         start_date = dateparser.parse(start_date_text, settings={'PREFER_DATES_FROM': 'future'})
         end_date = dateparser.parse(end_date_text, settings={'PREFER_DATES_FROM': 'future'})
@@ -175,38 +231,20 @@ def extract_details(text):
         if start_date and end_date:
             details["Start Date"] = start_date.strftime('%Y-%m-%d')
             details["End Date"] = end_date.strftime('%Y-%m-%d')
-            details["Trip Duration"] = f"{(end_date - start_date).days} days"
-    else:
-        extracted_dates = search_dates(text, settings={'PREFER_DATES_FROM': 'future'})
-        dates = [d[1].strftime('%Y-%m-%d') for d in extracted_dates] if extracted_dates else []
-        
-        if len(dates) > 1:
-            details["Start Date"], details["End Date"] = dates[:2]
-            start_date = datetime.strptime(details["Start Date"], "%Y-%m-%d")
-            end_date = datetime.strptime(details["End Date"], "%Y-%m-%d")
-            details["Trip Duration"] = f"{(end_date - start_date).days} days"
-        elif len(dates) == 1:
-            details["Start Date"] = dates[0]
-            if "duration_days" in locals():
-                start_date = datetime.strptime(dates[0], "%Y-%m-%d")
-                details["End Date"] = (start_date + timedelta(days=duration_days)).strftime('%Y-%m-%d')
+            details["Trip Duration"] = f"{(end_date - start_date).days + 1} days"  # +1 to include both days
     
-    date_range_match = re.search(
-        r'(?P<start_month>[A-Za-z]+)?\s*(?P<start_day>\d{1,2})(?:st|nd|rd|th)?(?:,\s*)?(?P<start_year>\d{4})?\s*(?:-|to|on|from|through)\s*'
-        r'(?P<end_month>[A-Za-z]+)?\s*(?P<end_day>\d{1,2})(?:st|nd|rd|th)?(?:,\s*)?(?P<end_year>\d{4})?',
-        text, re.IGNORECASE
-    )
-    if date_range_match:
-        start_day = date_range_match.group("start_day")
-        start_month = date_range_match.group("start_month") or date_range_match.group("end_month")
-        start_year = date_range_match.group("start_year") or date_range_match.group("end_year") or str(datetime.today().year)
+    elif to_date_match:
+        # Handle format "from 22th june 2025 to 29th june 2025"
+        start_day = to_date_match.group(1)
+        start_month = to_date_match.group(2)
+        start_year = to_date_match.group(3) or datetime.today().year
         
-        end_day = date_range_match.group("end_day")
-        end_month = date_range_match.group("end_month") or start_month
-        end_year = date_range_match.group("end_year") or start_year
+        end_day = to_date_match.group(4)
+        end_month = to_date_match.group(5) or start_month
+        end_year = to_date_match.group(6) or start_year
         
-        start_date_text = f"{start_day} {start_month}, {start_year}"
-        end_date_text = f"{end_day} {end_month}, {end_year}"
+        start_date_text = f"{start_day} {start_month} {start_year}"
+        end_date_text = f"{end_day} {end_month} {end_year}"
         
         start_date = dateparser.parse(start_date_text, settings={'PREFER_DATES_FROM': 'future'})
         end_date = dateparser.parse(end_date_text, settings={'PREFER_DATES_FROM': 'future'})
@@ -214,72 +252,150 @@ def extract_details(text):
         if start_date and end_date:
             details["Start Date"] = start_date.strftime('%Y-%m-%d')
             details["End Date"] = end_date.strftime('%Y-%m-%d')
-            details["Trip Duration"] = f"{(end_date - start_date).days} days"
-    else:
-        extracted_dates = search_dates(text, settings={'PREFER_DATES_FROM': 'future'})
-        dates = [d[1].strftime('%Y-%m-%d') for d in extracted_dates] if extracted_dates else []
-        
-        if len(dates) > 1:
-            details["Start Date"], details["End Date"] = dates[:2]
-            start_date = datetime.strptime(details["Start Date"], "%Y-%m-%d")
-            end_date = datetime.strptime(details["End Date"], "%Y-%m-%d")
-            details["Trip Duration"] = f"{(end_date - start_date).days} days"
-        elif len(dates) == 1:
-            details["Start Date"] = dates[0]
-            if "duration_days" in locals():
-                start_date = datetime.strptime(dates[0], "%Y-%m-%d")
-                details["End Date"] = (start_date + timedelta(days=duration_days)).strftime('%Y-%m-%d')
-    # Extract dates in the format 22/05/2025 or 23-06-2025
-    if not details.get("Start Date"):
-        date_pattern = r'\b(\d{1,2}[/\-]\d{1,2}[/\-]\d{4})\b'
-        matched_dates = re.findall(date_pattern, text)
-        
-        formatted_dates = []
-        for date_str in matched_dates:
-            # Normalize date format (replace "-" with "/")
-            date_str = date_str.replace("-", "/")
-            
-            # Parse date while ensuring correct day/month order
-            parsed_date = dateparser.parse(date_str, settings={'DATE_ORDER': 'DMY'})
-            
-            if parsed_date:
-                # Standardize output format
-                formatted_dates.append(parsed_date.strftime("%Y-%m-%d"))
-        
-        if len(formatted_dates) >= 2:
-            details["Start Date"] = formatted_dates[0]
-            details["End Date"] = formatted_dates[1]
-            
-            # Calculate trip duration
-            start_date = datetime.strptime(details["Start Date"], "%Y-%m-%d")
-            end_date = datetime.strptime(details["End Date"], "%Y-%m-%d")
-            details["Trip Duration"] = f"{(end_date - start_date).days } days"
-            
-        elif len(formatted_dates) == 1:
-            details["Start Date"] = formatted_dates[0]
-            
-            # If we have duration_days, calculate end date
-            if duration_days:
-                start_date = datetime.strptime(formatted_dates[0], "%Y-%m-%d")
-                details["End Date"] = (start_date + timedelta(days=duration_days - 1)).strftime('%Y-%m-%d')
+            details["Trip Duration"] = f"{(end_date - start_date).days + 1} days"
     
-    # If no dates found, try dateparser.search
-    if not details.get("Start Date"):
-        extracted_dates = search_dates(text, settings={'PREFER_DATES_FROM': 'future'})
-        dates = [d[1].strftime('%Y-%m-%d') for d in extracted_dates] if extracted_dates else []
+    elif numeric_match:
+        # Handle format "from 02-04-2025 to 29-04-2025"
+        start_day = numeric_match.group(1)
+        start_month = numeric_match.group(2)
+        start_year = numeric_match.group(3)
         
-        if len(dates) > 1:
-            details["Start Date"], details["End Date"] = dates[0], dates[1]
-            start_date = datetime.strptime(details["Start Date"], "%Y-%m-%d")
-            end_date = datetime.strptime(details["End Date"], "%Y-%m-%d")
-            details["Trip Duration"] = f"{(end_date - start_date).days } days"
-        elif len(dates) == 1:
-            details["Start Date"] = dates[0]
-            if duration_days:
-                start_date = datetime.strptime(dates[0], "%Y-%m-%d")
-                details["End Date"] = (start_date + timedelta(days=duration_days - 1)).strftime('%Y-%m-%d')
-                details["Trip Duration"] = f"{duration_days} days"
-    # Check for seasonal references
+        end_day = numeric_match.group(4)
+        end_month = numeric_match.group(5)
+        end_year = numeric_match.group(6)
+        
+        start_date = datetime(int(start_year), int(start_month), int(start_day))
+        end_date = datetime(int(end_year), int(end_month), int(end_day))
+        
+        details["Start Date"] = start_date.strftime('%Y-%m-%d')
+        details["End Date"] = end_date.strftime('%Y-%m-%d')
+        details["Trip Duration"] = f"{(end_date - start_date).days + 1} days"
+    
+    elif date_for_duration_match:
+        # Handle format "from 12th march for two week"
+        day = date_for_duration_match.group(1)
+        month = date_for_duration_match.group(2)
+        year = date_for_duration_match.group(3) or datetime.today().year
+        duration_num = convert_text_to_number(date_for_duration_match.group(4))
+        duration_unit = date_for_duration_match.group(5)
+        
+        start_date_text = f"{day} {month} {year}"
+        start_date = dateparser.parse(start_date_text, settings={'PREFER_DATES_FROM': 'future'})
+        
+        if start_date:
+            duration_days = convert_unit_to_days(duration_num, duration_unit)
+            end_date = start_date + timedelta(days=duration_days - 1)  # -1 to make duration inclusive of start day
+            
+            details["Start Date"] = start_date.strftime('%Y-%m-%d')
+            details["End Date"] = end_date.strftime('%Y-%m-%d')
+            details["Trip Duration"] = f"{duration_days} days"
+    
+    elif duration_from_date_match:
+        # Handle format "for a week from 13th april"
+        duration_num = convert_text_to_number(duration_from_date_match.group(1))
+        duration_unit = duration_from_date_match.group(2)
+        day = duration_from_date_match.group(3)
+        month = duration_from_date_match.group(4)
+        year = duration_from_date_match.group(5) or datetime.today().year
+        
+        start_date_text = f"{day} {month} {year}"
+        start_date = dateparser.parse(start_date_text, settings={'PREFER_DATES_FROM': 'future'})
+        
+        if start_date:
+            duration_days = convert_unit_to_days(duration_num, duration_unit)
+            end_date = start_date + timedelta(days=duration_days - 1)
+            
+            details["Start Date"] = start_date.strftime('%Y-%m-%d')
+            details["End Date"] = end_date.strftime('%Y-%m-%d')
+            details["Trip Duration"] = f"{duration_days} days"
+    
+    elif duration_on_date_match:
+        # Handle format "for two weeks on 3rd april"
+        duration_num = convert_text_to_number(duration_on_date_match.group(1))
+        duration_unit = duration_on_date_match.group(2)
+        day = duration_on_date_match.group(3)
+        month = duration_on_date_match.group(4)
+        year = duration_on_date_match.group(5) or datetime.today().year
+        
+        start_date_text = f"{day} {month} {year}"
+        start_date = dateparser.parse(start_date_text, settings={'PREFER_DATES_FROM': 'future'})
+        
+        if start_date:
+            duration_days = convert_unit_to_days(duration_num, duration_unit)
+            end_date = start_date + timedelta(days=duration_days - 1)
+            
+            details["Start Date"] = start_date.strftime('%Y-%m-%d')
+            details["End Date"] = end_date.strftime('%Y-%m-%d')
+            details["Trip Duration"] = f"{duration_days} days"
+    
+    elif on_date_for_duration_match:
+        # Handle format "on 13th march for a week"
+        day = on_date_for_duration_match.group(1)
+        month = on_date_for_duration_match.group(2)
+        year = on_date_for_duration_match.group(3) or datetime.today().year
+        duration_num = convert_text_to_number(on_date_for_duration_match.group(4))
+        duration_unit = on_date_for_duration_match.group(5)
+        
+        start_date_text = f"{day} {month} {year}"
+        start_date = dateparser.parse(start_date_text, settings={'PREFER_DATES_FROM': 'future'})
+        
+        if start_date:
+            duration_days = convert_unit_to_days(duration_num, duration_unit)
+            end_date = start_date + timedelta(days=duration_days - 1)
+            
+            details["Start Date"] = start_date.strftime('%Y-%m-%d')
+            details["End Date"] = end_date.strftime('%Y-%m-%d')
+            details["Trip Duration"] = f"{duration_days} days"
+    
+    elif duration_on_numeric_date_match:
+        # Handle format "for 2 weeks on 20/05/2025" or "for two weeks on 02-08-2025"
+        duration_num = convert_text_to_number(duration_on_numeric_date_match.group(1))
+        duration_unit = duration_on_numeric_date_match.group(2)
+        day = duration_on_numeric_date_match.group(3)
+        month = duration_on_numeric_date_match.group(4)
+        year = duration_on_numeric_date_match.group(5)
+        
+        try:
+            start_date = datetime(int(year), int(month), int(day))
+            duration_days = convert_unit_to_days(duration_num, duration_unit)
+            end_date = start_date + timedelta(days=duration_days - 1)
+            
+            details["Start Date"] = start_date.strftime('%Y-%m-%d')
+            details["End Date"] = end_date.strftime('%Y-%m-%d')
+            details["Trip Duration"] = f"{duration_days} days"
+        except ValueError:
+            # Handle potential date validation errors
+            pass
+    
+    elif on_numeric_date_for_duration_match:
+        # Handle format "on 05/06/2025 for two weeks" or "on 06-07-2025 for 2 weeks"
+        day = on_numeric_date_for_duration_match.group(1)
+        month = on_numeric_date_for_duration_match.group(2)
+        year = on_numeric_date_for_duration_match.group(3)
+        duration_num = convert_text_to_number(on_numeric_date_for_duration_match.group(4))
+        duration_unit = on_numeric_date_for_duration_match.group(5)
+        
+        try:
+            start_date = datetime(int(year), int(month), int(day))
+            duration_days = convert_unit_to_days(duration_num, duration_unit)
+            end_date = start_date + timedelta(days=duration_days - 1)
+            
+            details["Start Date"] = start_date.strftime('%Y-%m-%d')
+            details["End Date"] = end_date.strftime('%Y-%m-%d')
+            details["Trip Duration"] = f"{duration_days} days"
+        except ValueError:
+            # Handle potential date validation errors
+            pass
+    
+    # If none of the specific patterns matched, fall back to existing date extraction logic
+    if not details.get("Start Date"):
+        # Enhanced regex for extracting date ranges in multiple formats
+        date_range_match = re.search(
+            r'(?P<start_day>\d{1,2})(?:st|nd|rd|th)?\s*(?P<start_month>[A-Za-z]+)?,?\s*(?P<start_year>\d{4})?\s*(?:-|from|on|to|through)\s*'
+            r'(?P<end_day>\d{1,2})(?:st|nd|rd|th)?\s*(?P<end_month>[A-Za-z]+)?,?\s*(?P<end_year>\d{4})?',
+            text, re.IGNORECASE
+)
+        
     if seasonal_mappings:
         for season, start_month_day in seasonal_mappings.items():
             pattern = r'\b' + re.escape(season) + r'\b'
@@ -287,9 +403,9 @@ def extract_details(text):
                 today = datetime.today().year
                 start_date = f"{today}-{start_month_day}"
                 details["Start Date"] = start_date
-                if duration_days:
-                    details["End Date"] = (datetime.strptime(start_date, "%Y-%m-%d") + timedelta(days=duration_days - 1)).strftime('%Y-%m-%d')
-                break
+                if "duration_days" in locals():
+                    details["End Date"] = (datetime.strptime(start_date, "%Y-%m-%d") + timedelta(days=duration_days)).strftime('%Y-%m-%d')
+                break  
     
     # Extract number of travelers
     travelers_match = re.search(r'(?P<adults>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:people|persons|adult|person|adults|man|men|woman|women|lady|ladies|climber|traveler)',text, re.IGNORECASE)
@@ -326,7 +442,8 @@ def extract_details(text):
     "Adults": num_adults,
     "Children": num_children,
     "Infants": num_infants
-}
+    }
+    
     if solo_match:
         travelers["Adults"] = 1
     elif duo_match:
@@ -339,6 +456,7 @@ def extract_details(text):
             travelers["Adults"] = max(2, total_people - travelers["Children"] - travelers["Infants"])
     
     details["Number of Travelers"] = travelers
+    
     # Extract transportation preferences
     transport_modes = {
         "flight": ["flight", "fly", "airplane", "airlines","airline" ,"aeroplane"],
@@ -370,7 +488,7 @@ def extract_details(text):
     "expensive": "Luxury",
     "premium": "Luxury",
     "high-range": "Luxury"
-}
+    }
 
     budget_matches = []
     # Check for budget keywords in text
@@ -378,30 +496,55 @@ def extract_details(text):
         if re.search(r'\b' + re.escape(key) + r'\b', text, re.IGNORECASE):
             budget_matches.append(val)
 
-    # Regex to detect budget amounts with currency
-    budget_match = re.search(
-        r'\b(?:budget|cost|expense|spending cap|is|cost limit|amount|price)\s*(?:of\s*)?(?P<currency>\$|€|¥|₹|£)?\s*(?P<amount>[\d,]+)\s*(?P<currency_name>USD|dollars?|yen|JPY|euro|EUR|rupees?|INR|pounds?|GBP|CNY|yuan|RMB)?\b',
-    text, re.IGNORECASE
-)
     # Currency name to symbol mapping (handling singular & plural)
     currency_symbols = {
     "USD": "$", "dollar": "$", "dollars": "$",
-    "EUR": "€", "euro": "€",
+    "EUR": "€", "euro": "€", "euros": "€",
     "JPY": "¥", "yen": "¥",
     "INR": "₹", "rupee": "₹", "rupees": "₹",
     "GBP": "£", "pound": "£", "pounds": "£",
     "CNY": "¥", "yuan": "¥", "RMB": "¥"
-}
-# Process budget amount and currency
-    if budget_match:
-        currency_symbol = budget_match.group("currency") or ""
-        amount = budget_match.group("amount").replace(",", "")  # Normalize number format
-        currency_name = budget_match.group("currency_name") or ""
-    # Use detected symbol or mapped currency name
+    }
+
+    # First pattern: Budget with context words
+    budget_context_match = re.search(
+    r'\b(?:budget|cost|expense|spending cap|is|cost limit|amount|price)\s*(?:of\s*)?(?P<currency>\$|€|¥|₹|£)?\s*(?P<amount>[\d,]+)\s*(?P<currency_name>USD|dollars?|yen|JPY|euro|EUR|euros|rupees?|INR|pounds?|GBP|CNY|yuan|RMB)?\b',
+    text, re.IGNORECASE
+    )
+
+    # Second pattern: Direct currency amount without context words
+    direct_currency_match = re.search(
+    r'\b(?P<currency>\$|€|¥|₹|£)\s*(?P<amount>[\d,]+)\b|\b(?P<amount2>[\d,]+)\s*(?P<currency_name>USD|dollars?|yen|JPY|euro|EUR|euros|rupees?|INR|pounds?|GBP|CNY|yuan|RMB)\b',
+    text, re.IGNORECASE
+    )
+
+    # Process budget amount and currency
+    if budget_context_match:
+        currency_symbol = budget_context_match.group("currency") or ""
+        amount = budget_context_match.group("amount").replace(",", "")  # Normalize number format
+        currency_name = budget_context_match.group("currency_name") or ""
         detected_symbol = currency_symbol or currency_symbols.get(currency_name.lower(), "")
-        budget_value = f"{detected_symbol}{amount} ({currency_name if currency_name else 'Unknown Currency'})"
+        
+        if not currency_symbol and not currency_name:
+            budget_value = f"{amount} (Specify currency)"
+        else:
+            budget_value = f"{detected_symbol}{amount}" + (f" ({currency_name})" if currency_name and not currency_symbol else "")
+    
+    # Use detected symbol or mapped currency name
+    elif direct_currency_match:
+        currency_symbol = direct_currency_match.group("currency") or ""
+        amount = direct_currency_match.group("amount") or direct_currency_match.group("amount2")
+        currency_name = direct_currency_match.group("currency_name") or ""
+        detected_symbol = currency_symbol or currency_symbols.get(currency_name.lower(), "")
+    # Use detected symbol or mapped currency name
+        if not currency_symbol and not currency_name:
+            budget_value = f"{amount} (Specify Currency)"
+        else:
+            budget_value = f"{detected_symbol}{amount}" + (f" ({currency_name})" if currency_name and not currency_symbol else "")
+
     else:
-        budget_value = budget_matches[0] if budget_matches else "Unknown"
+       budget_value = budget_matches[0] if budget_matches else "Unknown"
+
     # Assign to details dictionary
     details["Budget Range"] = budget_value
     
@@ -425,7 +568,8 @@ def extract_details(text):
     "Religious Tourism": ["pilgrimages", "monastery visits", "religious festivals"],
     "Digital Nomadism": ["co-working spaces", "long-term stays", "remote work-friendly cafes"],
     "Family Travel": ["Family trip","theme parks","honeymoon", "kid-friendly resorts", "multi-generational travel","Family vacation"]
-}
+    }
+    
     trip_type_matches = []
     for trip, keywords in trip_type.items():
         for keyword in keywords:
@@ -445,7 +589,7 @@ def extract_details(text):
     "Guesthouses": ["guesthouse", "private guesthouse", "pension"],
     "Vacation rentals": ["vacation rental", "holiday rental", "short-term rental", "airbnb"],
     "Camping": ["camping", "campground", "tent", "camp"]
-}
+    }
     
     accommodation_matches = []
     for accomm_type, keywords in accommodation_types.items():
@@ -460,8 +604,8 @@ def extract_details(text):
     special_requirements = ["wheelchair access", "vegetarian meals", "vegan", "gluten-free"]
     found_requirements = [req for req in special_requirements if req in text.lower()]
     details["Special Requirements"] = ", ".join(found_requirements) if found_requirements else "Not specified"
+    
     return details
-
 
 # Prompt Generation Agent
 def generate_prompt(details):
@@ -531,10 +675,12 @@ def generate_prompt(details):
     elif "Starting Location" in details:
         prompt += f", starting from {details['Starting Location']}"
     elif "Start Date" in details:
-        prompt += f", departing on {details['Start Date']}" 
+        prompt += f", departing on {details['Start Date']}"
+    
     # End date
     if details.get("End Date"):
-        prompt += f". The trip ends on {details['End Date']}." 
+        prompt += f". The trip ends on {details['End Date']}."
+    
     # Budget and general recommendations
     prompt += f" Please consider a {details.get('Budget Range', 'moderate')} budget and provide accommodation, dining, and activity recommendations."
     
@@ -552,19 +698,14 @@ def generate_prompt(details):
     
     return prompt
 
-
-st.title("Tripease")
-
+st.title("Travel Plan Extractor")
 user_input = st.text_area("Enter your travel details:")
-
 if st.button("Plan my Trip", type='primary'):
     if user_input:
         details = extract_details(user_input)  # Extract details once
-        
         # Create a pandas DataFrame for table presentation
         details_df = pd.DataFrame(details.items(), columns=["Detail", "Value"])
         details_df.index = details_df.index + 1
-        
         st.subheader("Extracted Travel Details")
         st.table(details_df)
 
@@ -579,13 +720,12 @@ if st.button("Plan my Trip", type='primary'):
             with st.spinner("Generating detailed itinerary with Google Gemini..."):
                 itinerary = generate_itinerary_with_gemini(prompt)  
             st.subheader("Your Personalized Itinerary (Powered by Google Gemini)")
-            st.markdown(itinerary) 
+            st.markdown(itinerary)
             details_json = json.dumps(details, indent=4)  
             st.subheader("Extracted Travel Details (JSON)")
             st.json(details_json)  # Display JSON output
         else:
             st.warning("An error occurred in itinerary generation. JSON details will not be generated.")
-
     else:
         st.warning("Please enter some text to extract details.")
      # Footer
