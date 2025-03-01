@@ -280,7 +280,7 @@ def extract_details(text):
                 details["End Date"] = (start_date + timedelta(days=duration_days - 1)).strftime('%Y-%m-%d')
                 details["Trip Duration"] = f"{duration_days} days"
     # Check for seasonal references
-    if not details.get("Start Date"):
+    if seasonal_mappings:
         for season, start_month_day in seasonal_mappings.items():
             pattern = r'\b' + re.escape(season) + r'\b'
             if re.search(pattern, text_lower, re.IGNORECASE):
