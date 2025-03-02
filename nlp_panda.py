@@ -508,7 +508,7 @@ def extract_details(text):
 
     # First pattern: Budget with context words
     budget_context_match = re.search(
-    r'\b(?:budget|cost|expense|spending cap|is|cost limit|amount|price)\s*(?:of\s*)?(?P<currency>\$|€|¥|₹|£)?\s*(?P<amount>[\d,]+)\s*(?P<currency_name>USD|dollars?|yen|JPY|euro|EUR|euros|rupees?|INR|pounds?|GBP|CNY|yuan|RMB)?\b',
+    r'\b(?:budget|cost|expense|spending cap|max limit|is|cost limit|amount|price)\s*(?:of\s*)?(?P<currency>\$|€|¥|₹|£)?\s*(?P<amount>[\d,]+)\s*(?P<currency_name>USD|dollars?|yen|JPY|euro|EUR|euros|rupees?|INR|pounds?|GBP|CNY|yuan|RMB)?\b',
     text, re.IGNORECASE
     )
 
