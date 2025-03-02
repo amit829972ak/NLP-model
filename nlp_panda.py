@@ -168,7 +168,7 @@ def extract_details(text):
     numeric_match = re.search(numeric_date_pattern, text, re.IGNORECASE)
     
     # Pattern 4: Handle formats like "from 12th march for two week"
-    date_for_duration_pattern = r'from\s+(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?\s+for\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(day|days|week|weeks|month|months)'
+    date_for_duration_pattern = r'from\s+(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)(?:\s+(\d{4}))?\s+for\s+(\d+|a|one|two|three|four|five|six|seven|eight|nine|ten)\s+(day|days|week|weeks|month|months)'
     date_for_duration_match = re.search(date_for_duration_pattern, text, re.IGNORECASE)
     
     # Pattern 5: Handle formats like "for a week from 13th april"
