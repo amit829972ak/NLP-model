@@ -5,6 +5,7 @@ requests
 openai
 pip==25.0.1
 pandas==1.5.3
+matplotlib
 timedelta
 datetime
 numpy==1.23.5
