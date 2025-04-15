@@ -165,7 +165,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def setup_gemini():
-    GOOGLE_API_KEY = st.secrets["AIzaSyAvKUVyBX8aZyabXEgRWAlDQvZWsSLrdEY"]  # Store your API key in Streamlit secrets
+    GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]  # Store your API key in Streamlit secrets
     genai.configure(api_key=GOOGLE_API_KEY)
     return genai.GenerativeModel('gemini-1.5-pro')  # Choose the appropriate model
 
